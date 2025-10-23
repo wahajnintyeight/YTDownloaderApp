@@ -7,12 +7,14 @@ import {
   Text,
 } from 'react-native';
 import { useTheme } from '../hooks/useTheme';
+import SearchIcon from './SearchIcon';
 
 interface SearchBarProps {
   onSearch: (query: string) => void;
   placeholder?: string;
   value?: string;
   debounceMs?: number;
+  showSearchButton?: boolean;
 }
 
 const SearchBar: React.FC<SearchBarProps> = ({
@@ -20,6 +22,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
   placeholder = 'Search YouTube videos',
   value: controlledValue,
   debounceMs = 300,
+  showSearchButton = true,
 }) => {
   const { theme } = useTheme();
   const [internalValue, setInternalValue] = useState<string>(controlledValue || '');
@@ -39,18 +42,21 @@ const SearchBar: React.FC<SearchBarProps> = ({
       setInternalValue(text);
     }
 
-    // Clear previous debounce
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-    }
-
-    // Set new debounce
-    debounceRef.current = setTimeout(() => {
-      if (text.trim()) {
-        onSearch(text.trim());
+    // Only auto-search if search button is not shown
+    if (!showSearchButton) {
+      // Clear previous debounce
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
       }
-    }, debounceMs);
-  }, [onSearch, debounceMs, controlledValue]);
+
+      // Set new debounce
+      debounceRef.current = setTimeout(() => {
+        if (text.trim()) {
+          onSearch(text.trim());
+        }
+      }, debounceMs);
+    }
+  }, [onSearch, debounceMs, controlledValue, showSearchButton]);
 
   const handleSubmit = useCallback(() => {
     if (value.trim()) {
@@ -77,12 +83,12 @@ const SearchBar: React.FC<SearchBarProps> = ({
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: theme.colors.surface,
-      borderRadius: 24,
-      paddingHorizontal: theme.spacing.md,
+      borderRadius: 28,
+      paddingHorizontal: theme.spacing.lg,
       paddingVertical: theme.spacing.sm,
       borderWidth: 1,
       borderColor: theme.colors.border,
-      height: 48,
+      height: 56,
     },
     input: {
       flex: 1,
@@ -98,6 +104,22 @@ const SearchBar: React.FC<SearchBarProps> = ({
       fontSize: 18,
       color: theme.colors.textSecondary,
       fontWeight: '600',
+    },
+    searchButton: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      marginLeft: theme.spacing.sm,
+      justifyContent: 'center',
+      alignItems: 'center',
+      elevation: 2,
+      shadowColor: '#000',
+      shadowOffset: {
+        width: 0,
+        height: 1,
+      },
+      shadowOpacity: 0.2,
+      shadowRadius: 2,
     },
   });
 
@@ -118,9 +140,23 @@ const SearchBar: React.FC<SearchBarProps> = ({
         autoCorrect={false}
       />
       
-      {value.length > 0 && (
+      {value.length > 0 && !showSearchButton && (
         <TouchableOpacity style={styles.clearButton} onPress={handleClear}>
           <Text style={styles.clearButtonText}>×</Text>
+        </TouchableOpacity>
+      )}
+      
+      {showSearchButton && (
+        <TouchableOpacity 
+          style={[styles.searchButton, { backgroundColor: theme.colors.primary }]} 
+          onPress={handleSubmit}
+          activeOpacity={0.8}
+        >
+          <SearchIcon 
+            size={20} 
+            color="#FFFFFF" 
+            strokeWidth={2.5}
+          />
         </TouchableOpacity>
       )}
     </View>

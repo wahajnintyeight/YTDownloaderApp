@@ -28,9 +28,47 @@ export interface Download {
 export interface SearchRequest {
   query: string;
   maxResults?: number;
+  nextPage?: string;
+  prevPage?: string;
 }
 
 export interface SearchResponse {
   videos: Video[];
   nextPageToken?: string;
+  prevPageToken?: string;
+  totalPages?: number;
+}
+
+// API Response types (matching the actual API structure)
+export interface ApiSearchResponse {
+  code: number;
+  message: string;
+  result: {
+    items: ApiVideoItem[];
+    nextPage: string;
+    prevPage: string;
+    totalPage: number;
+  };
+}
+
+export interface ApiVideoItem {
+  etag: string;
+  id: {
+    kind: string;
+    videoId: string;
+  };
+  kind: string;
+  snippet: {
+    channelId: string;
+    channelTitle: string;
+    description: string;
+    liveBroadcastContent: string;
+    publishedAt: string;
+    thumbnails: {
+      default: { height: number; url: string; width: number };
+      high: { height: number; url: string; width: number };
+      medium: { height: number; url: string; width: number };
+    };
+    title: string;
+  };
 }

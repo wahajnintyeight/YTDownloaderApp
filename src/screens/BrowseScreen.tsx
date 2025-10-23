@@ -15,29 +15,42 @@ import { useSearch } from '../hooks/useSearch';
 import SearchBar from '../components/SearchBar';
 import VideoResultCard from '../components/VideoResultCard';
 import LoadingAnimation from '../components/LoadingAnimation';
+import DownloadModal from '../components/DownloadModal';
+import AppHeader from '../components/AppHeader';
 
 const BrowseScreen: React.FC = () => {
   const { theme, isDark } = useTheme();
-  const { results, loading, error, search, clearResults } = useSearch();
+  const { results, loading, error, hasMore, search, loadMore, clearResults } = useSearch();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
 
   const handleSearch = useCallback(async (query: string) => {
     setSearchQuery(query);
-    await search(query);
+    await search(query, true);
   }, [search]);
 
   const handleVideoPress = useCallback((video: Video) => {
     setSelectedVideo(video);
-    // TODO: Open download modal
-    console.log('Selected video:', video.title);
+    setModalVisible(true);
+  }, []);
+
+  const handleCloseModal = useCallback(() => {
+    setModalVisible(false);
+    setSelectedVideo(null);
   }, []);
 
   const handleRefresh = useCallback(() => {
     if (searchQuery.trim()) {
-      search(searchQuery);
+      search(searchQuery, true);
     }
   }, [search, searchQuery]);
+
+  const handleLoadMore = useCallback(() => {
+    if (hasMore && !loading) {
+      loadMore();
+    }
+  }, [hasMore, loading, loadMore]);
 
   const renderVideoItem: ListRenderItem<Video> = useCallback(({ item }) => (
     <VideoResultCard video={item} onPress={handleVideoPress} />
@@ -98,18 +111,12 @@ const BrowseScreen: React.FC = () => {
       flex: 1,
       backgroundColor: theme.colors.background,
     },
-    header: {
-      paddingHorizontal: theme.spacing.md,
-      paddingVertical: theme.spacing.sm,
+    searchSection: {
+      paddingHorizontal: theme.spacing.lg,
+      paddingVertical: theme.spacing.md,
       backgroundColor: theme.colors.background,
       borderBottomWidth: 1,
       borderBottomColor: theme.colors.border,
-    },
-    title: {
-      fontSize: 24,
-      fontWeight: '700',
-      color: theme.colors.text,
-      marginBottom: theme.spacing.sm,
     },
     listContainer: {
       flex: 1,
@@ -158,17 +165,14 @@ const BrowseScreen: React.FC = () => {
   });
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <StatusBar
-        barStyle={isDark ? 'light-content' : 'dark-content'}
-        backgroundColor={theme.colors.background}
-      />
+    <View style={styles.container}>
+      <AppHeader />
       
-      <View style={styles.header}>
-        <Text style={styles.title}>YT Downloader</Text>
+      <View style={styles.searchSection}>
         <SearchBar
           onSearch={handleSearch}
           placeholder="Search YouTube videos"
+          showSearchButton={true}
         />
       </View>
 
@@ -197,12 +201,27 @@ const BrowseScreen: React.FC = () => {
               offset: 100 * index,
               index,
             })}
+            onEndReached={handleLoadMore}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={
+              hasMore && loading ? (
+                <View style={{ paddingVertical: 20 }}>
+                  <LoadingAnimation type="general" visible={true} size="small" />
+                </View>
+              ) : null
+            }
           />
         ) : (
           renderEmptyState()
         )}
       </View>
-    </SafeAreaView>
+
+      <DownloadModal
+        visible={modalVisible}
+        video={selectedVideo}
+        onClose={handleCloseModal}
+      />
+    </View>
   );
 };
 

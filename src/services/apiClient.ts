@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
-import { SearchRequest, SearchResponse } from '../types/video';
+import { SearchRequest, SearchResponse, ApiSearchResponse, Video } from '../types/video';
 import { mockSearchVideos } from './mockData';
 
 // API endpoint
@@ -66,6 +66,26 @@ class ApiClient {
     }
   }
 
+  private transformApiResponse(apiResponse: ApiSearchResponse): SearchResponse {
+    const videos: Video[] = apiResponse.result.items.map(item => ({
+      id: item.id.videoId,
+      title: item.snippet.title,
+      thumbnailUrl: item.snippet.thumbnails.medium.url,
+      duration: 0, // Duration not provided in search results
+      channelName: item.snippet.channelTitle,
+      channelId: item.snippet.channelId,
+      publishedAt: item.snippet.publishedAt,
+      viewCount: undefined, // View count not provided in search results
+    }));
+
+    return {
+      videos,
+      nextPageToken: apiResponse.result.nextPage,
+      prevPageToken: apiResponse.result.prevPage,
+      totalPages: apiResponse.result.totalPage,
+    };
+  }
+
   async searchVideos(request: SearchRequest): Promise<SearchResponse> {
     // Use mock data in development when backend is not available
     if (USE_MOCK_DATA) {
@@ -78,12 +98,20 @@ class ApiClient {
     }
 
     try {
-      const response: AxiosResponse<SearchResponse> = await this.client.post('/search-yt-videos', {
+      const requestBody = {
         query: request.query,
-        maxResults: request.maxResults || 20,
-      });
+        maxResults: request.maxResults || 15,
+        nextPage: request.nextPage || '',
+        prevPage: request.prevPage || '',
+      };
 
-      return response.data;
+      const response: AxiosResponse<ApiSearchResponse> = await this.client.post('/search-yt-videos', requestBody);
+
+      if (response.data.code !== 1009) {
+        throw new Error(response.data.message || 'API returned error code');
+      }
+
+      return this.transformApiResponse(response.data);
     } catch (error: any) {
       console.error('Search videos error:', error);
 
@@ -93,7 +121,7 @@ class ApiClient {
         return await mockSearchVideos(request.query);
       }
 
-      throw new Error(error.response?.data?.message || 'Failed to search videos');
+      throw new Error(error.response?.data?.message || error.message || 'Failed to search videos');
     }
   }
 

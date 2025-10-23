@@ -1,97 +1,224 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# YT Downloader 🎬
 
-# Getting Started
+A modern, feature-rich YouTube video downloader built with React Native and TypeScript. Search, preview, and download YouTube videos with a beautiful, intuitive interface.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## ✨ Features
 
-## Step 1: Start Metro
+### 🎨 Modern UI/UX
+- **Dark/Light Theme Support** - Automatic system theme detection with manual toggle
+- **Vibrant Color Palette** - Eye-catching design with professional aesthetics
+- **Smooth Animations** - 60fps performance with React Native Reanimated
+- **Custom Icons** - Minimalistic, geometric search icon designed for 2025
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+### 🔍 Video Search
+- **Real-time Search** - Search YouTube videos with instant results
+- **Pagination Support** - Load more results with infinite scroll
+- **API Integration** - Connects to YouTube Data API v3 via backend service
+- **Mock Data Fallback** - Works offline with sample data for testing
+- **Search History** - Maintains search state and results
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+### 📱 User Interface
+- **Professional Header** - Modern app header with branding and theme toggle
+- **Responsive Search Bar** - Large, accessible search input with custom button
+- **Video Cards** - Rich video previews with thumbnails, titles, and metadata
+- **Loading States** - Beautiful loading animations for all async operations
+- **Error Handling** - User-friendly error messages with retry options
 
-```sh
-# Using npm
-npm start
+### 🎯 Download System (UI Ready)
+- **Download Modal** - Comprehensive download configuration interface
+- **Format Selection** - Choose from MP4, MP3, WEBM, MKV formats
+- **Quality Options** - Multiple quality settings from 144p to 2160p + audio-only
+- **Progress Tracking** - Real-time download progress indicators
+- **State Management** - Robust download queue and status management
 
-# OR using Yarn
-yarn start
+### 🏗️ Technical Excellence
+- **TypeScript** - Full type safety and IntelliSense support
+- **Context API** - Efficient state management for theme and downloads
+- **Custom Hooks** - Reusable logic for search, downloads, and theming
+- **Performance Optimized** - Memoized components and optimized FlatList rendering
+- **Error Boundaries** - Comprehensive error handling and recovery
+
+## 🚀 Getting Started
+
+### Prerequisites
+- Node.js 18+ 
+- React Native CLI
+- Android Studio (for Android development)
+- Xcode (for iOS development)
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/wahajnintyeight/YTDownloaderApp.git
+   cd YTDownloaderApp
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Install iOS dependencies** (iOS only)
+   ```bash
+   cd ios && pod install && cd ..
+   ```
+
+### Development
+
+1. **Start Metro bundler**
+   ```bash
+   npm start
+   ```
+
+2. **Run on Android**
+   ```bash
+   npm run android
+   ```
+
+3. **Run on iOS**
+   ```bash
+   npm run ios
+   ```
+
+### Building Standalone APK
+
+For testing without the development server:
+
+```bash
+# Build and install debug APK
+./build-and-install.sh
+
+# Build and install release APK
+./build-and-install.sh release
 ```
 
-## Step 2: Build and run your app
+## 🏛️ Architecture
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
+### Project Structure
+```
+src/
+├── components/          # Reusable UI components
+│   ├── AppHeader.tsx   # Modern app header with theme toggle
+│   ├── SearchBar.tsx   # Custom search input with icon
+│   ├── SearchIcon.tsx  # Minimalistic geometric search icon
+│   ├── VideoResultCard.tsx # Video preview cards
+│   ├── DownloadModal.tsx   # Download configuration modal
+│   └── LoadingAnimation.tsx # Custom loading states
+├── hooks/              # Custom React hooks
+│   ├── useTheme.tsx    # Theme management and switching
+│   ├── useSearch.ts    # Search functionality and state
+│   └── useDownloads.tsx # Download queue management
+├── screens/            # App screens
+│   ├── SplashScreen.tsx # Animated splash screen
+│   └── BrowseScreen.tsx # Main search and results screen
+├── services/           # API and external services
+│   ├── apiClient.ts    # HTTP client with retry logic
+│   └── mockData.ts     # Sample data for testing
+├── types/              # TypeScript type definitions
+├── theme/              # Theme system (colors, typography, spacing)
+└── utils/              # Utility functions
 ```
 
-### iOS
+### Key Technologies
+- **React Native 0.82** - Cross-platform mobile framework
+- **TypeScript 5.8** - Type-safe JavaScript
+- **React Navigation 6** - Navigation library
+- **React Native Reanimated 3** - High-performance animations
+- **Axios** - HTTP client with interceptors
+- **Context API** - State management
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+## 🎨 Design System
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+### Color Palette
+- **Primary**: `#FF6B6B` (Vibrant Red)
+- **Secondary**: `#4ECDC4` (Vibrant Teal)  
+- **Accent**: `#FFE66D` (Vibrant Yellow)
+- **Success**: `#00B894` (Green)
+- **Error**: `#FF3838` (Red)
 
-```sh
-bundle install
+### Typography Scale
+- **H1**: 32px, Bold (700)
+- **H2**: 24px, Semi-Bold (600)
+- **H3**: 18px, Semi-Bold (600)
+- **Body**: 16px, Regular (400)
+- **Caption**: 14px, Regular (400)
+
+### Spacing System
+- **XS**: 4px
+- **SM**: 8px  
+- **MD**: 16px
+- **LG**: 24px
+- **XL**: 32px
+- **XXL**: 48px
+
+## 🔧 Configuration
+
+### API Integration
+The app connects to a backend service for YouTube video search:
+
+```typescript
+// API Base URL
+const BASE_URL = 'https://api.theprojectphoenix.top/v2/api';
+
+// Endpoints
+POST /search-yt-videos  // Search for videos
+POST /download-yt-videos // Download videos (backend feature)
 ```
 
-Then, and every time you update your native dependencies, run:
+### Environment Setup
+The app automatically falls back to mock data when the backend is unavailable, ensuring a smooth development experience.
 
-```sh
-bundle exec pod install
-```
+## 📱 Screenshots
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+### Light Mode
+- Modern header with app branding
+- Clean search interface with custom icon
+- Rich video cards with thumbnails and metadata
+- Professional download modal with format selection
 
-```sh
-# Using npm
-npm run ios
+### Dark Mode  
+- Automatic theme switching
+- Consistent dark theme across all components
+- High contrast for accessibility
+- Vibrant accent colors maintained
 
-# OR using Yarn
-yarn ios
-```
+## 🚧 Upcoming Features
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+### Download Implementation
+- [ ] **File System Integration** - Save videos to device storage
+- [ ] **Background Downloads** - Continue downloads when app is backgrounded
+- [ ] **Download Manager** - Queue management and concurrent downloads
+- [ ] **Progress Notifications** - System notifications for download status
+- [ ] **Download History** - Track completed downloads
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+### Enhanced Features
+- [ ] **Playlist Support** - Download entire YouTube playlists
+- [ ] **Subtitle Downloads** - Include video subtitles
+- [ ] **Quality Auto-Selection** - Smart quality selection based on network
+- [ ] **Share Integration** - Share videos with other apps
+- [ ] **Storage Management** - Monitor and manage storage usage
 
-## Step 3: Modify your app
+## 🤝 Contributing
 
-Now that you have successfully run the app, let's make changes!
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+## 📄 License
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+## 🙏 Acknowledgments
 
-## Congratulations! :tada:
+- **React Native Community** - For the amazing framework and tools
+- **YouTube Data API** - For providing video search capabilities
+- **Design Inspiration** - Modern mobile app design trends for 2025
 
-You've successfully run and modified your React Native App. :partying_face:
+---
 
-### Now what?
+**Built with ❤️ using React Native and TypeScript**
 
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+*Ready for 2025 with modern design, robust architecture, and exceptional user experience.*
