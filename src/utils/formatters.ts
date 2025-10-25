@@ -2,6 +2,10 @@
  * Format duration from seconds to MM:SS or HH:MM:SS format
  */
 export const formatDuration = (seconds: number): string => {
+  if (!seconds || seconds <= 0) {
+    return '--:--';
+  }
+
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const remainingSeconds = seconds % 60;

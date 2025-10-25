@@ -42,9 +42,9 @@ const SplashScreen: React.FC = () => {
       setShowLoading(true);
     }, 2000);
 
-    // Navigate to Browse screen after initialization
+    // Navigate to Main screen after initialization
     const navigationTimer = setTimeout(() => {
-      navigation.replace('Browse');
+      navigation.replace('Main');
     }, 3000);
 
     return () => {

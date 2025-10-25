@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useReducer, ReactNode } from 'react';
 import { Download, Video, VideoFormat, VideoQuality, DownloadStatus } from '../types/video';
+import { apiClient } from '../services/apiClient';
 
 interface DownloadState {
   downloads: Download[];
@@ -76,7 +77,7 @@ const downloadReducer = (state: DownloadState, action: DownloadAction): Download
 
 interface DownloadContextType {
   downloads: Download[];
-  startDownload: (video: Video, format: VideoFormat, quality: VideoQuality) => string;
+  startDownload: (video: Video, format: VideoFormat, quality: VideoQuality) => Promise<string>;
   updateProgress: (id: string, progress: number) => void;
   completeDownload: (id: string, filePath: string) => void;
   failDownload: (id: string, error: string) => void;
@@ -92,10 +93,38 @@ interface DownloadProviderProps {
 export const DownloadProvider: React.FC<DownloadProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(downloadReducer, { downloads: [] });
 
-  const startDownload = (video: Video, format: VideoFormat, quality: VideoQuality): string => {
+  const startDownload = async (video: Video, format: VideoFormat, quality: VideoQuality): Promise<string> => {
+    const downloadId = Date.now().toString();
     dispatch({ type: 'START_DOWNLOAD', payload: { video, format, quality } });
-    // Return the ID that will be generated
-    return Date.now().toString();
+
+    try {
+      // Determine bitRate or quality based on format
+      const options: any = {};
+      if (format === 'mp3') {
+        options.bitRate = '320k'; // Default high quality for audio
+      } else {
+        options.quality = quality === 'audio_only' ? '720p' : quality;
+      }
+
+      await apiClient.downloadVideo(video.id, format as 'mp3' | 'mp4' | 'webm', {
+        ...options,
+        onProgress: (progress) => {
+          updateProgress(downloadId, progress);
+        },
+        onComplete: (filePath, filename) => {
+          completeDownload(downloadId, filePath);
+        },
+        onError: (error) => {
+          failDownload(downloadId, error);
+        },
+      });
+
+      return downloadId;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Download failed';
+      failDownload(downloadId, errorMessage);
+      throw error;
+    }
   };
 
   const updateProgress = (id: string, progress: number) => {

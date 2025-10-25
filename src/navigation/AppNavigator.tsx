@@ -3,7 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { RootStackParamList } from './types';
 import SplashScreen from '../screens/SplashScreen';
-import BrowseScreen from '../screens/BrowseScreen';
+import MainTabNavigator from './MainTabNavigator';
 
 const Stack = createStackNavigator<RootStackParamList>();
 
@@ -17,7 +17,7 @@ const AppNavigator: React.FC = () => {
         }}
       >
         <Stack.Screen name="Splash" component={SplashScreen} />
-        <Stack.Screen name="Browse" component={BrowseScreen} />
+        <Stack.Screen name="Main" component={MainTabNavigator} />
       </Stack.Navigator>
     </NavigationContainer>
   );

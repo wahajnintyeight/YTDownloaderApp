@@ -7,11 +7,11 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
-  Alert,
 } from 'react-native';
 import { Video, VideoFormat, VideoQuality } from '../types/video';
 import { useTheme } from '../hooks/useTheme';
 import { useDownloads } from '../hooks/useDownloads';
+import { useDialog } from '../hooks/useDialog';
 import LoadingAnimation from './LoadingAnimation';
 
 interface DownloadModalProps {
@@ -26,6 +26,7 @@ const qualityOptions: VideoQuality[] = ['144p', '240p', '360p', '480p', '720p', 
 const DownloadModal: React.FC<DownloadModalProps> = ({ visible, video, onClose }) => {
   const { theme } = useTheme();
   const { startDownload } = useDownloads();
+  const { showSuccess, showError } = useDialog();
   const [selectedFormat, setSelectedFormat] = useState<VideoFormat>('mp4');
   const [selectedQuality, setSelectedQuality] = useState<VideoQuality>('720p');
   const [isDownloading, setIsDownloading] = useState(false);
@@ -35,19 +36,23 @@ const DownloadModal: React.FC<DownloadModalProps> = ({ visible, video, onClose }
 
     try {
       setIsDownloading(true);
-      const downloadId = startDownload(video, selectedFormat, selectedQuality);
+      const downloadId = await startDownload(video, selectedFormat, selectedQuality);
       
-      Alert.alert(
+      showSuccess(
         'Download Started',
         `${video.title} is now downloading in ${selectedFormat.toUpperCase()} format at ${selectedQuality} quality.`,
-        [{ text: 'OK', onPress: onClose }]
+        onClose
       );
     } catch (error) {
-      Alert.alert('Download Error', 'Failed to start download. Please try again.');
+      console.error('Download error:', error);
+      showError(
+        'Download Error', 
+        'Failed to start download. Please try again.'
+      );
     } finally {
       setIsDownloading(false);
     }
-  }, [video, selectedFormat, selectedQuality, startDownload, onClose]);
+  }, [video, selectedFormat, selectedQuality, startDownload, onClose, showSuccess, showError]);
 
   const handleClose = useCallback(() => {
     if (!isDownloading) {
@@ -272,7 +277,10 @@ const DownloadModal: React.FC<DownloadModalProps> = ({ visible, video, onClose }
               <View style={styles.loadingContainer}>
                 <LoadingAnimation type="download" visible={true} />
                 <Text style={[styles.videoChannel, { marginTop: theme.spacing.sm }]}>
-                  Starting download...
+                  Preparing download...
+                </Text>
+                <Text style={[styles.videoChannel, { marginTop: theme.spacing.xs, fontSize: 12 }]}>
+                  This may take a few moments
                 </Text>
               </View>
             ) : (
