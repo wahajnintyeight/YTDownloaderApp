@@ -15,6 +15,7 @@ export type DownloadStatus = 'pending' | 'downloading' | 'completed' | 'failed' 
 
 export interface Download {
   id: string;
+  serverDownloadId?: string; // Server-generated download ID for SSE tracking
   video: Video;
   format: VideoFormat;
   quality: VideoQuality;

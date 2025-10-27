@@ -1,4 +1,4 @@
-import RNFS from 'react-native-fs';
+﻿import RNFS from 'react-native-fs';
 import EventSource from 'react-native-sse';
 
 export interface DownloadProgress {
@@ -58,7 +58,9 @@ class DownloadService {
   private sseBaseUrl: string;
   private activeEventSources: Map<string, EventSource> = new Map();
   private reconnectAttempts: Map<string, number> = new Map();
+  private heartbeatTimers: Map<string, NodeJS.Timeout> = new Map();
   private maxReconnectAttempts: number = 5;
+  private heartbeatTimeout: number = 30000; // 30 seconds
 
   constructor(
     apiBaseUrl: string = 'https://api.theprojectphoenix.top',
@@ -160,39 +162,92 @@ class DownloadService {
     console.log(`🌐 SSE Endpoint: ${sseUrl}`);
     console.log(`📡 Connection State: CONNECTING`);
     console.log(`⏰ Connected at: ${timestamp}`);
+    console.log(`💓 Heartbeat timeout: ${this.heartbeatTimeout / 1000}s`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     try {
-      // Create EventSource connection with proper configuration
-      const eventSource = new EventSource(sseUrl, {
-        lineEndingCharacter: '\n', // Standard line ending for SSE
-      });
+      // Create EventSource connection (removed lineEndingCharacter option)
+      const eventSource = new EventSource(sseUrl);
 
       // Store active connection
       this.activeEventSources.set(downloadId, eventSource);
       this.reconnectAttempts.set(downloadId, 0);
+
+      // Setup heartbeat monitoring
+      const resetHeartbeat = () => {
+        // Clear existing timer
+        const existingTimer = this.heartbeatTimers.get(downloadId);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+        }
+
+        // Set new heartbeat timer
+        const timer = setTimeout(() => {
+          const timeoutTimestamp = new Date().toISOString();
+          console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          console.warn(`[${timeoutTimestamp}] ⚠️ HEARTBEAT TIMEOUT`);
+          console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+          console.warn(`🆔 Download ID: ${downloadId}`);
+          console.warn(`⏱️ No messages received for ${this.heartbeatTimeout / 1000}s`);
+          console.warn('🔄 Connection may be dead - attempting reconnect...');
+          console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+          // Close the dead connection
+          eventSource.close();
+          this.activeEventSources.delete(downloadId);
+          this.heartbeatTimers.delete(downloadId);
+
+          // Attempt reconnection
+          const attempts = this.reconnectAttempts.get(downloadId) || 0;
+          if (attempts < this.maxReconnectAttempts) {
+            this.reconnectAttempts.set(downloadId, attempts + 1);
+            const backoffDelay = Math.min(1000 * Math.pow(2, attempts), 5000);
+            console.log(`🔄 Reconnecting in ${backoffDelay}ms (attempt ${attempts + 1}/${this.maxReconnectAttempts})...\n`);
+            
+            setTimeout(() => {
+              this.startSSEListener(downloadId, onProgress, onComplete, onError);
+            }, backoffDelay);
+          } else {
+            console.error('❌ Max reconnection attempts exceeded - giving up');
+            onError?.('Connection timeout - no response from server');
+          }
+        }, this.heartbeatTimeout);
+
+        this.heartbeatTimers.set(downloadId, timer);
+      };
+
+      // Start heartbeat monitoring
+      resetHeartbeat();
 
       // Handle connection open
       eventSource.addEventListener('open', () => {
         const openTimestamp = new Date().toISOString();
         console.log(`[${openTimestamp}] 🔌 SSE Connection opened successfully`);
         console.log(`📡 Connection State: OPEN`);
-        console.log(`🆔 Download ID: ${downloadId}\n`);
+        console.log(`🆔 Download ID: ${downloadId}`);
+        console.log(`💓 Heartbeat monitoring active\n`);
 
         // Reset reconnect attempts on successful connection
         this.reconnectAttempts.set(downloadId, 0);
+        resetHeartbeat();
       });
 
       // Handle incoming messages
       eventSource.addEventListener('message', async (event) => {
         const messageTimestamp = new Date().toISOString();
 
+        // Reset heartbeat on any message
+        resetHeartbeat();
+
         try {
           const eventData = event.data || '{}';
           const data: DownloadEvent = JSON.parse(eventData);
-          console.log(`[${messageTimestamp}] 📨 SSE Event received: ${data.type}`);
+          if(event?.data !== undefined || event?.data !== null){
+            console.log(`[${messageTimestamp}] 📨 SSE Event received: ${data}`);
+            console.log(`💓 Heartbeat reset`);
+          }
 
-          switch (data.type) {
+          switch (data?.type) {
             case 'download_progress':
               console.log(`📊 Progress: ${data.progress}%`);
               console.log(`📝 Status: ${data.status}`);
@@ -249,7 +304,7 @@ class DownloadService {
           }
         } catch (parseError) {
           console.error(`❌ Failed to parse SSE message:`, parseError);
-          console.error(`Raw event data:`, event.data);
+          console.error(`Raw event data:`, event?.data);
         }
       });
 
@@ -262,6 +317,13 @@ class DownloadService {
         console.error(`🆔 Download ID: ${downloadId}`);
         console.error(`🔄 Reconnect attempt: ${attempts + 1}/${this.maxReconnectAttempts}`);
         console.error('Error details:', error);
+
+        // Clear heartbeat timer on error
+        const timer = this.heartbeatTimers.get(downloadId);
+        if (timer) {
+          clearTimeout(timer);
+          this.heartbeatTimers.delete(downloadId);
+        }
 
         // Increment reconnect attempts
         this.reconnectAttempts.set(downloadId, attempts + 1);
@@ -332,12 +394,21 @@ class DownloadService {
 
   cancelDownload(downloadId: string): void {
     const eventSource = this.activeEventSources.get(downloadId);
+    const heartbeatTimer = this.heartbeatTimers.get(downloadId);
+    
     if (eventSource) {
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log('🛑 CANCELLING DOWNLOAD');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log(`🆔 Download ID: ${downloadId}`);
       console.log('🔌 Closing SSE connection...');
+      console.log('💓 Stopping heartbeat monitoring...');
+
+      // Clear heartbeat timer
+      if (heartbeatTimer) {
+        clearTimeout(heartbeatTimer);
+        this.heartbeatTimers.delete(downloadId);
+      }
 
       eventSource.close();
       this.activeEventSources.delete(downloadId);
@@ -358,12 +429,23 @@ class DownloadService {
       console.log('🧹 CLEANING UP ALL DOWNLOADS');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log(`📊 Active SSE connections: ${activeCount}`);
+      
       this.activeEventSources.forEach((eventSource, downloadId) => {
         console.log(`   └─ Closing connection: ${downloadId}`);
+        
+        // Clear heartbeat timer
+        const timer = this.heartbeatTimers.get(downloadId);
+        if (timer) {
+          clearTimeout(timer);
+        }
+        
         eventSource.close();
       });
+      
       this.activeEventSources.clear();
       this.reconnectAttempts.clear();
+      this.heartbeatTimers.clear();
+      
       console.log('✅ All SSE connections closed and cleaned up');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
     }
