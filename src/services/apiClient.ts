@@ -1,5 +1,10 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
-import { SearchRequest, SearchResponse, ApiSearchResponse, Video } from '../types/video';
+import {
+  SearchRequest,
+  SearchResponse,
+  ApiSearchResponse,
+  Video,
+} from '../types/video';
 import { mockSearchVideos } from './mockData';
 
 // API endpoint
@@ -20,24 +25,29 @@ class ApiClient {
 
     // Request interceptor for logging
     this.client.interceptors.request.use(
-      (config) => {
-        console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
+      config => {
+        console.log(
+          `API Request: ${config.method?.toUpperCase()} ${config.url}`,
+        );
         return config;
       },
-      (error) => {
+      error => {
         console.error('API Request Error:', error);
         return Promise.reject(error);
-      }
+      },
     );
 
     // Response interceptor for logging and error handling
     this.client.interceptors.response.use(
-      (response) => {
+      response => {
         console.log(`API Response: ${response.status} ${response.config.url}`);
         return response;
       },
-      async (error) => {
-        console.error('API Response Error:', error.response?.data || error.message);
+      async error => {
+        console.error(
+          'API Response Error:',
+          error.response?.data || error.message,
+        );
 
         // Retry logic for network errors
         if (error.code === 'NETWORK_ERROR' || error.code === 'ECONNABORTED') {
@@ -45,7 +55,7 @@ class ApiClient {
         }
 
         return Promise.reject(error);
-      }
+      },
     );
   }
 
@@ -128,7 +138,10 @@ class ApiClient {
         prevPage: request.prevPage || '',
       };
 
-      const response: AxiosResponse<ApiSearchResponse> = await this.client.post('/search-yt-videos', requestBody);
+      const response: AxiosResponse<ApiSearchResponse> = await this.client.post(
+        '/search-yt-videos',
+        requestBody,
+      );
 
       if (response.data.code !== 1009) {
         throw new Error(response.data.message || 'API returned error code');
@@ -139,12 +152,20 @@ class ApiClient {
       console.error('Search videos error:', error);
 
       // Fallback to mock data if backend is not available
-      if (error.code === 'NETWORK_ERROR' || error.code === 'ECONNABORTED' || error.response?.status >= 500) {
+      if (
+        error.code === 'NETWORK_ERROR' ||
+        error.code === 'ECONNABORTED' ||
+        error.response?.status >= 500
+      ) {
         console.log('API not available, using mock data as fallback...');
         return await mockSearchVideos(request.query);
       }
 
-      throw new Error(error.response?.data?.message || error.message || 'Failed to search videos');
+      throw new Error(
+        error.response?.data?.message ||
+          error.message ||
+          'Failed to search videos',
+      );
     }
   }
 
@@ -157,11 +178,12 @@ class ApiClient {
       onProgress?: (progress: number) => void;
       onComplete?: (filePath: string, filename: string) => void;
       onError?: (error: string) => void;
-    }
+      localDownloadId?: string;
+    },
   ): Promise<string> {
     // Import dynamically to avoid circular dependencies
     const { downloadService } = await import('./downloadService');
-    
+
     return downloadService.downloadVideo(
       {
         videoId,
@@ -171,7 +193,8 @@ class ApiClient {
       },
       options?.onProgress,
       options?.onComplete,
-      options?.onError
+      options?.onError,
+      options?.localDownloadId,
     );
   }
 }

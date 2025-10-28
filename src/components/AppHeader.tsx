@@ -46,8 +46,8 @@ const AppHeader: React.FC<AppHeaderProps> = ({
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: theme.spacing.lg,
-      paddingVertical: theme.spacing.md,
-      minHeight: 60,
+      paddingVertical: theme.spacing.lg,
+      minHeight: 72,
     },
     leftSection: {
       flex: 1,
@@ -61,16 +61,16 @@ const AppHeader: React.FC<AppHeaderProps> = ({
       alignItems: 'flex-end',
     },
     title: {
-      fontSize: 24,
+      fontSize: 28,
       fontWeight: '700',
       color: theme.colors.text,
       textAlign: 'center',
     },
     subtitle: {
-      fontSize: 12,
+      fontSize: 13,
       color: theme.colors.textSecondary,
       textAlign: 'center',
-      marginTop: 2,
+      marginTop: 4,
     },
     themeButton: {
       width: 40,
@@ -89,11 +89,11 @@ const AppHeader: React.FC<AppHeaderProps> = ({
       alignItems: 'center',
     },
     brandAccent: {
-      width: 30,
-      height: 3,
+      width: 40,
+      height: 4,
       backgroundColor: theme.colors.primary,
       borderRadius: 2,
-      marginTop: 4,
+      marginTop: 6,
     },
   });
 

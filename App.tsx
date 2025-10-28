@@ -10,6 +10,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ThemeProvider } from './src/hooks/useTheme';
 import { DownloadProvider } from './src/hooks/useDownloads';
 import { DialogProvider } from './src/contexts/DialogContext';
+import { SettingsProvider } from './src/contexts/SettingsContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import { logger } from './src/utils/logger';
 
@@ -53,11 +54,13 @@ function App(): React.JSX.Element {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <DialogProvider>
-          <DownloadProvider>
-            <AppNavigator />
-          </DownloadProvider>
-        </DialogProvider>
+        <SettingsProvider>
+          <DialogProvider>
+            <DownloadProvider>
+              <AppNavigator />
+            </DownloadProvider>
+          </DialogProvider>
+        </SettingsProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

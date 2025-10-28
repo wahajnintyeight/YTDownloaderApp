@@ -20,111 +20,189 @@ interface DownloadModalProps {
   onClose: () => void;
 }
 
-const formatOptions: VideoFormat[] = ['mp4', 'mp3', 'webm', 'mkv'];
-const qualityOptions: VideoQuality[] = ['144p', '240p', '360p', '480p', '720p', '1080p', '1440p', '2160p', 'audio_only'];
+// Primary options (most commonly used)
+const primaryFormatOptions: VideoFormat[] = ['mp4', 'mp3'];
+const secondaryFormatOptions: VideoFormat[] = ['webm', 'mkv'];
 
-const DownloadModal: React.FC<DownloadModalProps> = ({ visible, video, onClose }) => {
+const primaryQualityOptions: VideoQuality[] = ['360p', '480p', '720p'];
+const secondaryQualityOptions: VideoQuality[] = [
+  '144p',
+  '240p',
+  '1080p',
+  '1440p',
+  '2160p',
+  'audio_only',
+];
+
+const DownloadModal: React.FC<DownloadModalProps> = ({
+  visible,
+  video,
+  onClose,
+}) => {
   const { theme } = useTheme();
   const { startDownload } = useDownloads();
   const { showSuccess, showError } = useDialog();
   const [selectedFormat, setSelectedFormat] = useState<VideoFormat>('mp4');
   const [selectedQuality, setSelectedQuality] = useState<VideoQuality>('720p');
   const [isDownloading, setIsDownloading] = useState(false);
+  const [showAllFormats, setShowAllFormats] = useState(false);
+  const [showAllQualities, setShowAllQualities] = useState(false);
 
   const handleDownload = useCallback(async () => {
     if (!video) return;
 
     try {
       setIsDownloading(true);
-      const downloadId = await startDownload(video, selectedFormat, selectedQuality);
-      
+      const downloadId = await startDownload(
+        video,
+        selectedFormat,
+        selectedQuality,
+      );
+
       showSuccess(
         'Download Started',
-        `${video.title} is now downloading in ${selectedFormat.toUpperCase()} format at ${selectedQuality} quality.`,
-        onClose
+        `${
+          video.title
+        } is now downloading in ${selectedFormat.toUpperCase()} format at ${selectedQuality} quality.`,
+        onClose,
       );
     } catch (error) {
       console.error('Download error:', error);
       showError(
-        'Download Error', 
-        'Failed to start download. Please try again.'
+        'Download Error',
+        'Failed to start download. Please try again.',
       );
     } finally {
       setIsDownloading(false);
     }
-  }, [video, selectedFormat, selectedQuality, startDownload, onClose, showSuccess, showError]);
+  }, [
+    video,
+    selectedFormat,
+    selectedQuality,
+    startDownload,
+    onClose,
+    showSuccess,
+    showError,
+  ]);
 
   const handleClose = useCallback(() => {
-    if (!isDownloading) {
-      onClose();
-    }
-  }, [isDownloading, onClose]);
+    // Always allow closing the modal, even while downloading
+    onClose();
+  }, [onClose]);
 
-  const renderFormatSelector = () => (
-    <View style={styles.selectorContainer}>
-      <Text style={[styles.selectorTitle, { color: theme.colors.text }]}>Format</Text>
-      <View style={styles.optionsContainer}>
-        {formatOptions.map((format) => (
-          <TouchableOpacity
-            key={format}
-            style={[
-              styles.optionButton,
-              {
-                backgroundColor: selectedFormat === format ? theme.colors.primary : theme.colors.surface,
-                borderColor: theme.colors.border,
-              },
-            ]}
-            onPress={() => setSelectedFormat(format)}
-          >
-            <Text
+  const renderFormatSelector = () => {
+    const allFormats = showAllFormats 
+      ? [...primaryFormatOptions, ...secondaryFormatOptions]
+      : primaryFormatOptions;
+
+    return (
+      <View style={styles.selectorContainer}>
+        <View style={styles.selectorHeader}>
+          <Text style={[styles.selectorTitle, { color: theme.colors.text }]}>
+            Format
+          </Text>
+          {secondaryFormatOptions.length > 0 && (
+            <TouchableOpacity
+              style={styles.expandButton}
+              onPress={() => setShowAllFormats(!showAllFormats)}
+            >
+              <Text style={[styles.expandButtonText, { color: theme.colors.primary }]}>
+                {showAllFormats ? 'Show Less' : `+${secondaryFormatOptions.length} More`}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        <View style={styles.optionsContainer}>
+          {allFormats.map(format => (
+            <TouchableOpacity
+              key={format}
               style={[
-                styles.optionText,
+                styles.optionButton,
                 {
-                  color: selectedFormat === format ? '#FFFFFF' : theme.colors.text,
-                  fontWeight: selectedFormat === format ? '600' : '400',
+                  backgroundColor:
+                    selectedFormat === format
+                      ? theme.colors.primary
+                      : theme.colors.surface,
+                  borderColor: theme.colors.border,
                 },
               ]}
+              onPress={() => setSelectedFormat(format)}
             >
-              {format.toUpperCase()}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text
+                style={[
+                  styles.optionText,
+                  {
+                    color:
+                      selectedFormat === format ? '#FFFFFF' : theme.colors.text,
+                    fontWeight: selectedFormat === format ? '600' : '400',
+                  },
+                ]}
+              >
+                {format.toUpperCase()}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
-  const renderQualitySelector = () => (
-    <View style={styles.selectorContainer}>
-      <Text style={[styles.selectorTitle, { color: theme.colors.text }]}>Quality</Text>
-      <View style={styles.optionsContainer}>
-        {qualityOptions.map((quality) => (
-          <TouchableOpacity
-            key={quality}
-            style={[
-              styles.optionButton,
-              {
-                backgroundColor: selectedQuality === quality ? theme.colors.primary : theme.colors.surface,
-                borderColor: theme.colors.border,
-              },
-            ]}
-            onPress={() => setSelectedQuality(quality)}
-          >
-            <Text
+  const renderQualitySelector = () => {
+    const allQualities = showAllQualities 
+      ? [...primaryQualityOptions, ...secondaryQualityOptions]
+      : primaryQualityOptions;
+
+    return (
+      <View style={styles.selectorContainer}>
+        <View style={styles.selectorHeader}>
+          <Text style={[styles.selectorTitle, { color: theme.colors.text }]}>
+            Quality
+          </Text>
+          {secondaryQualityOptions.length > 0 && (
+            <TouchableOpacity
+              style={styles.expandButton}
+              onPress={() => setShowAllQualities(!showAllQualities)}
+            >
+              <Text style={[styles.expandButtonText, { color: theme.colors.primary }]}>
+                {showAllQualities ? 'Show Less' : `+${secondaryQualityOptions.length} More`}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        <View style={styles.optionsContainer}>
+          {allQualities.map(quality => (
+            <TouchableOpacity
+              key={quality}
               style={[
-                styles.optionText,
+                styles.optionButton,
                 {
-                  color: selectedQuality === quality ? '#FFFFFF' : theme.colors.text,
-                  fontWeight: selectedQuality === quality ? '600' : '400',
+                  backgroundColor:
+                    selectedQuality === quality
+                      ? theme.colors.primary
+                      : theme.colors.surface,
+                  borderColor: theme.colors.border,
                 },
               ]}
+              onPress={() => setSelectedQuality(quality)}
             >
-              {quality === 'audio_only' ? 'Audio Only' : quality}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text
+                style={[
+                  styles.optionText,
+                  {
+                    color:
+                      selectedQuality === quality ? '#FFFFFF' : theme.colors.text,
+                    fontWeight: selectedQuality === quality ? '600' : '400',
+                  },
+                ]}
+              >
+                {quality === 'audio_only' ? 'Audio Only' : quality}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   const styles = StyleSheet.create({
     modalOverlay: {
@@ -189,10 +267,23 @@ const DownloadModal: React.FC<DownloadModalProps> = ({ visible, video, onClose }
     selectorContainer: {
       marginBottom: theme.spacing.lg,
     },
+    selectorHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: theme.spacing.sm,
+    },
     selectorTitle: {
       fontSize: 16,
       fontWeight: '600',
-      marginBottom: theme.spacing.sm,
+    },
+    expandButton: {
+      paddingHorizontal: theme.spacing.sm,
+      paddingVertical: theme.spacing.xs,
+    },
+    expandButtonText: {
+      fontSize: 12,
+      fontWeight: '500',
     },
     optionsContainer: {
       flexDirection: 'row',
@@ -255,7 +346,10 @@ const DownloadModal: React.FC<DownloadModalProps> = ({ visible, video, onClose }
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
             <View style={styles.videoInfo}>
               <Image
                 source={{ uri: video.thumbnailUrl }}
@@ -276,10 +370,17 @@ const DownloadModal: React.FC<DownloadModalProps> = ({ visible, video, onClose }
             {isDownloading ? (
               <View style={styles.loadingContainer}>
                 <LoadingAnimation type="download" visible={true} />
-                <Text style={[styles.videoChannel, { marginTop: theme.spacing.sm }]}>
+                <Text
+                  style={[styles.videoChannel, { marginTop: theme.spacing.sm }]}
+                >
                   Preparing download...
                 </Text>
-                <Text style={[styles.videoChannel, { marginTop: theme.spacing.xs, fontSize: 12 }]}>
+                <Text
+                  style={[
+                    styles.videoChannel,
+                    { marginTop: theme.spacing.xs, fontSize: 12 },
+                  ]}
+                >
                   This may take a few moments
                 </Text>
               </View>
@@ -293,7 +394,10 @@ const DownloadModal: React.FC<DownloadModalProps> = ({ visible, video, onClose }
                 disabled={isDownloading}
               >
                 <Text style={styles.downloadButtonText}>
-                  Download {selectedFormat.toUpperCase()} - {selectedQuality === 'audio_only' ? 'Audio Only' : selectedQuality}
+                  Download {selectedFormat.toUpperCase()} -{' '}
+                  {selectedQuality === 'audio_only'
+                    ? 'Audio Only'
+                    : selectedQuality}
                 </Text>
               </TouchableOpacity>
             )}

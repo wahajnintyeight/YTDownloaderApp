@@ -1,74 +1,85 @@
-import React from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { useTheme } from '../hooks/useTheme';
 
 interface DownloadProgressProps {
   progress: number; // 0-100
-  filename?: string;
   visible?: boolean;
+  showPercentage?: boolean;
 }
 
-const DownloadProgress: React.FC<DownloadProgressProps> = ({ 
-  progress, 
-  filename, 
-  visible = true 
+const DownloadProgress: React.FC<DownloadProgressProps> = ({
+  progress,
+  visible = true,
+  showPercentage = false,
 }) => {
   const { theme } = useTheme();
+  const animatedProgress = useSharedValue(0);
 
-  if (!visible) return null;
+  useEffect(() => {
+    animatedProgress.value = withSpring(Math.max(0, Math.min(100, progress)), {
+      damping: 10,
+      mass: 1,
+      overshootClamping: false,
+    });
+  }, [progress, animatedProgress]);
 
-  const styles = StyleSheet.create({
+  const animatedBarStyle = useAnimatedStyle(() => {
+    return {
+      width: `${animatedProgress.value}%`,
+    };
+  });
+
+  const progressColor = progress >= 100 ? theme.colors.success || '#10b981' : theme.colors.primary;
+
+  const styles = useMemo(() => StyleSheet.create({
     container: {
-      backgroundColor: theme.colors.background,
-      padding: theme.spacing.sm,
-      borderRadius: 8,
       marginTop: theme.spacing.sm,
     },
-    filename: {
-      fontSize: 12,
-      fontWeight: '500',
-      color: theme.colors.textSecondary,
-      marginBottom: theme.spacing.xs,
-    },
     progressContainer: {
-      height: 6,
+      height: 4,
       backgroundColor: theme.colors.border,
-      borderRadius: 3,
+      borderRadius: 2,
       overflow: 'hidden',
     },
     progressBar: {
       height: '100%',
-      backgroundColor: theme.colors.primary,
-      borderRadius: 3,
+      backgroundColor: progressColor,
+      borderRadius: 2,
     },
     progressText: {
-      fontSize: 12,
+      fontSize: 11,
       color: theme.colors.textSecondary,
       textAlign: 'center',
       marginTop: theme.spacing.xs,
+      fontWeight: '600',
     },
-  });
+  }), [theme, progressColor]);
+
+  if (!visible) return null;
 
   return (
     <View style={styles.container}>
-      {filename && (
-        <Text style={styles.filename} numberOfLines={1}>
-          {filename}
-        </Text>
-      )}
       <View style={styles.progressContainer}>
-        <View 
+        <Animated.View
           style={[
-            styles.progressBar, 
-            { width: `${Math.max(0, Math.min(100, progress))}%` }
-          ]} 
+            styles.progressBar,
+            animatedBarStyle,
+          ]}
         />
       </View>
-      <Text style={styles.progressText}>
-        {Math.round(progress)}% complete
-      </Text>
+      {showPercentage && <Text style={styles.progressText}>{Math.round(progress)}%</Text>}
     </View>
   );
 };
 
-export default DownloadProgress;
+export default React.memo(DownloadProgress, (prev, next) => {
+  const prevRounded = Math.round(prev.progress);
+  const nextRounded = Math.round(next.progress);
+  return (
+    prevRounded === nextRounded &&
+    prev.visible === next.visible &&
+    prev.showPercentage === next.showPercentage
+  );
+});

@@ -22,17 +22,21 @@ import AppHeader from '../components/AppHeader';
 
 const BrowseScreen: React.FC = () => {
   const { theme, isDark } = useTheme();
-  const { results, loading, error, hasMore, search, loadMore, clearResults } = useSearch();
+  const { results, loading, error, hasMore, search, loadMore, clearResults } =
+    useSearch();
   const { showAlert, showSuccess, showError, showConfirm } = useDialog();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
 
-  const handleSearch = useCallback(async (query: string) => {
-    console.log('🔍 Search initiated:', query);
-    setSearchQuery(query);
-    await search(query, true);
-  }, [search]);
+  const handleSearch = useCallback(
+    async (query: string) => {
+      console.log('🔍 Search initiated:', query);
+      setSearchQuery(query);
+      await search(query, true);
+    },
+    [search],
+  );
 
   const handleVideoPress = useCallback((video: Video) => {
     console.log('📹 Video selected:', video.title);
@@ -48,7 +52,7 @@ const BrowseScreen: React.FC = () => {
   const handleTestDownload = useCallback(() => {
     // Create a test video object with the specified video ID
     const testVideo: Video = {
-      id: 'GT8ornYrDEs',
+      id: 'QxU6jF7_YTU',
       title: 'Test Video - Sample Download',
       thumbnailUrl: 'https://img.youtube.com/vi/GT8ornYrDEs/mqdefault.jpg',
       duration: 240, // 4 minutes
@@ -57,7 +61,7 @@ const BrowseScreen: React.FC = () => {
       publishedAt: new Date().toISOString(),
       viewCount: 1000000,
     };
-    
+
     setSelectedVideo(testVideo);
     setModalVisible(true);
   }, []);
@@ -74,16 +78,19 @@ const BrowseScreen: React.FC = () => {
     }
   }, [hasMore, loading, loadMore]);
 
-  const renderVideoItem: ListRenderItem<Video> = useCallback(({ item }) => (
-    <VideoResultCard video={item} onPress={handleVideoPress} />
-  ), [handleVideoPress]);
+  const renderVideoItem: ListRenderItem<Video> = useCallback(
+    ({ item }) => <VideoResultCard video={item} onPress={handleVideoPress} />,
+    [handleVideoPress],
+  );
 
   const renderEmptyState = () => {
     if (loading) {
       return (
         <View style={styles.centerContainer}>
           <LoadingAnimation type="search" visible={true} />
-          <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
+          <Text
+            style={[styles.emptyText, { color: theme.colors.textSecondary }]}
+          >
             Searching videos...
           </Text>
         </View>
@@ -96,7 +103,9 @@ const BrowseScreen: React.FC = () => {
           <Text style={[styles.errorText, { color: theme.colors.error }]}>
             {error}
           </Text>
-          <Text style={[styles.retryText, { color: theme.colors.textSecondary }]}>
+          <Text
+            style={[styles.retryText, { color: theme.colors.textSecondary }]}
+          >
             Pull down to retry
           </Text>
         </View>
@@ -106,10 +115,14 @@ const BrowseScreen: React.FC = () => {
     if (searchQuery && results.length === 0) {
       return (
         <View style={styles.centerContainer}>
-          <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
+          <Text
+            style={[styles.emptyText, { color: theme.colors.textSecondary }]}
+          >
             No videos found for "{searchQuery}"
           </Text>
-          <Text style={[styles.emptySubtext, { color: theme.colors.textSecondary }]}>
+          <Text
+            style={[styles.emptySubtext, { color: theme.colors.textSecondary }]}
+          >
             Try a different search term
           </Text>
         </View>
@@ -121,21 +134,37 @@ const BrowseScreen: React.FC = () => {
         <Text style={[styles.welcomeText, { color: theme.colors.text }]}>
           Welcome to YT Downloader
         </Text>
-        <Text style={[styles.welcomeSubtext, { color: theme.colors.textSecondary }]}>
+        <Text
+          style={[styles.welcomeSubtext, { color: theme.colors.textSecondary }]}
+        >
           Search for YouTube videos to download
         </Text>
-        
+
         {/* Temporary test button for dialogs */}
         <View style={styles.testButtonsContainer}>
           <TouchableOpacity
-            style={[styles.testButton, { backgroundColor: theme.colors.primary }]}
-            onPress={() => showSuccess('Welcome!', 'Custom dialog system is working perfectly!')}
+            style={[
+              styles.testButton,
+              { backgroundColor: theme.colors.primary },
+            ]}
+            onPress={() =>
+              showSuccess(
+                'Welcome!',
+                'Custom dialog system is working perfectly!',
+              )
+            }
           >
             <Text style={styles.testButtonText}>Test Dialog</Text>
           </TouchableOpacity>
-          
+
           <TouchableOpacity
-            style={[styles.testButton, { backgroundColor: theme.colors.secondary, marginTop: theme.spacing.sm }]}
+            style={[
+              styles.testButton,
+              {
+                backgroundColor: theme.colors.secondary,
+                marginTop: theme.spacing.sm,
+              },
+            ]}
             onPress={handleTestDownload}
           >
             <Text style={styles.testButtonText}>Test Download</Text>
@@ -223,7 +252,7 @@ const BrowseScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <AppHeader />
-      
+
       <View style={styles.searchSection}>
         <SearchBar
           onSearch={handleSearch}
@@ -237,7 +266,7 @@ const BrowseScreen: React.FC = () => {
           <FlatList
             data={results}
             renderItem={renderVideoItem}
-            keyExtractor={(item) => item.id}
+            keyExtractor={item => item.id}
             contentContainerStyle={styles.listContent}
             refreshControl={
               <RefreshControl
@@ -262,7 +291,11 @@ const BrowseScreen: React.FC = () => {
             ListFooterComponent={
               hasMore && loading ? (
                 <View style={{ paddingVertical: 20 }}>
-                  <LoadingAnimation type="general" visible={true} size="small" />
+                  <LoadingAnimation
+                    type="general"
+                    visible={true}
+                    size="small"
+                  />
                 </View>
               ) : null
             }

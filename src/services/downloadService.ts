@@ -1,5 +1,13 @@
-﻿import RNFS from 'react-native-fs';
+import RNFS from 'react-native-fs';
 import EventSource from 'react-native-sse';
+import { Platform, AppState, AppStateStatus } from 'react-native';
+import { createDocument, writeFile as safWriteFile } from 'react-native-saf-x';
+import { logMemoryUsage, forceGarbageCollection } from '../utils/memoryUtils';
+import {
+  debugDownloadCompletion,
+  debugMemoryState,
+  createCrashSafeWrapper,
+} from '../utils/downloadDebug';
 
 export interface DownloadProgress {
   type: 'download_progress';
@@ -15,7 +23,12 @@ export interface DownloadComplete {
   status: 'completed';
   progress: number;
   message: string;
-  file: {
+  fileData: string; // base64 encoded file content
+  filename?: string;
+  fileSize?: number;
+  mimeType?: string;
+  // Legacy format support
+  file?: {
     videoId: string;
     status: 'completed';
     filename: string;
@@ -61,20 +74,76 @@ class DownloadService {
   private heartbeatTimers: Map<string, NodeJS.Timeout> = new Map();
   private maxReconnectAttempts: number = 5;
   private heartbeatTimeout: number = 30000; // 30 seconds
+  // Throttle progress logs per downloadId to avoid JS thread blocking
+  private lastProgressLog: Map<string, { ts: number; pct: number }> = new Map();
+  // Track listener context so we can resume after backgrounding
+  private listenerContext: Map<string, {
+    onProgress?: (progress: number) => void;
+    onComplete?: (filePath: string, filename: string) => void;
+    onError?: (error: string) => void;
+    localDownloadId?: string;
+  }> = new Map();
+  private pausedOnBackground: Set<string> = new Set();
+  private appState: AppStateStatus = 'active';
 
   constructor(
     apiBaseUrl: string = 'https://api.theprojectphoenix.top',
-    sseBaseUrl: string = 'https://sse.theprojectphoenix.top'
+    sseBaseUrl: string = 'https://sse.theprojectphoenix.top',
   ) {
-    this.apiBaseUrl = apiBaseUrl;
-    this.sseBaseUrl = sseBaseUrl;
+    this.apiBaseUrl = apiBaseUrl; //'http://192.168.100.10:8881'; // ;
+    this.sseBaseUrl = sseBaseUrl; //'http://192.168.100.10:8885'; // ;
+
+    // Manage SSE lifecycle with AppState to reduce background load
+    AppState.addEventListener('change', this.handleAppStateChange);
   }
+
+  private handleAppStateChange = (nextState: AppStateStatus) => {
+    const prev = this.appState;
+    this.appState = nextState;
+
+    if ((nextState === 'background' || nextState === 'inactive') && prev === 'active') {
+      // Pause all active SSE connections
+      this.activeEventSources.forEach((eventSource, downloadId) => {
+        try {
+          const timer = this.heartbeatTimers.get(downloadId);
+          if (timer) {
+            clearTimeout(timer);
+            this.heartbeatTimers.delete(downloadId);
+          }
+          eventSource.close();
+          this.activeEventSources.delete(downloadId);
+          this.pausedOnBackground.add(downloadId);
+        } catch (e) {
+          // ignore
+        }
+      });
+    }
+
+    if (nextState === 'active' && (prev === 'background' || prev === 'inactive')) {
+      // Resume paused SSE connections
+      const ids = Array.from(this.pausedOnBackground.values());
+      this.pausedOnBackground.clear();
+      ids.forEach(downloadId => {
+        const ctx = this.listenerContext.get(downloadId);
+        if (ctx) {
+          this.startSSEListener(
+            downloadId,
+            ctx.onProgress,
+            ctx.onComplete,
+            ctx.onError,
+            ctx.localDownloadId,
+          );
+        }
+      });
+    }
+  };
 
   async downloadVideo(
     options: DownloadOptions,
     onProgress?: (progress: number) => void,
     onComplete?: (filePath: string, filename: string) => void,
-    onError?: (error: string) => void
+    onError?: (error: string) => void,
+    localDownloadId?: string,
   ): Promise<string> {
     const timestamp = new Date().toISOString();
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -86,26 +155,34 @@ class DownloadService {
       bitRate: options.bitRate || 'default',
       quality: options.quality || 'default',
     });
-    console.log('🌐 API Endpoint:', `${this.apiBaseUrl}/v2/api/download-yt-videos`);
+    console.log(
+      '🌐 API Endpoint:',
+      `${this.apiBaseUrl}/v2/api/download-yt-videos`,
+    );
 
     try {
       console.log('⏳ Sending POST request to download API...');
 
       // Start download request
-      const response = await fetch(`${this.apiBaseUrl}/v2/api/download-yt-videos`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      const response = await fetch(
+        `${this.apiBaseUrl}/v2/api/download-yt-videos`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            videoId: options.videoId,
+            format: options.format,
+            bitRate: options.bitRate,
+            quality: options.quality,
+          }),
         },
-        body: JSON.stringify({
-          videoId: options.videoId,
-          format: options.format,
-          bitRate: options.bitRate,
-          quality: options.quality,
-        }),
-      });
+      );
 
-      console.log(`📡 API Response Status: ${response.status} ${response.statusText}`);
+      console.log(
+        `📡 API Response Status: ${response.status} ${response.statusText}`,
+      );
 
       if (!response.ok) {
         console.error(`❌ API Error: HTTP ${response.status}`);
@@ -118,21 +195,33 @@ class DownloadService {
       console.log('✅ Download API Response:', responseData);
 
       // Extract download ID from nested result object
-      const downloadId = responseData.result?.downloadId || responseData.downloadId;
+      const downloadId =
+        responseData.result?.downloadId || responseData.downloadId;
 
       console.log(`🆔 Download ID: ${downloadId}`);
 
       if (!downloadId) {
         console.error('❌ No download ID in response');
-        console.error('Response structure:', JSON.stringify(responseData, null, 2));
+        console.error(
+          'Response structure:',
+          JSON.stringify(responseData, null, 2),
+        );
         throw new Error('Server did not return a download ID');
       }
 
-      console.log('🔄 Starting SSE EventSource listener for real-time updates...');
+      console.log(
+        '🔄 Starting SSE EventSource listener for real-time updates...',
+      );
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
       // Use proper SSE EventSource for real-time updates
-      this.startSSEListener(downloadId, onProgress, onComplete, onError);
+      this.startSSEListener(
+        downloadId,
+        onProgress,
+        onComplete,
+        onError,
+        localDownloadId,
+      );
 
       return downloadId;
     } catch (error) {
@@ -141,7 +230,9 @@ class DownloadService {
       console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.error('Error details:', error);
       console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-      onError?.(error instanceof Error ? error.message : 'Failed to start download');
+      onError?.(
+        error instanceof Error ? error.message : 'Failed to start download',
+      );
       throw error;
     }
   }
@@ -150,8 +241,16 @@ class DownloadService {
     downloadId: string,
     onProgress?: (progress: number) => void,
     onComplete?: (filePath: string, filename: string) => void,
-    onError?: (error: string) => void
+    onError?: (error: string) => void,
+    localDownloadId?: string,
   ): void {
+    // Save context for potential resume
+    this.listenerContext.set(downloadId, {
+      onProgress,
+      onComplete,
+      onError,
+      localDownloadId,
+    });
     const sseUrl = `${this.sseBaseUrl}/events/download-${downloadId}`;
     const timestamp = new Date().toISOString();
 
@@ -188,7 +287,9 @@ class DownloadService {
           console.warn(`[${timeoutTimestamp}] ⚠️ HEARTBEAT TIMEOUT`);
           console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
           console.warn(`🆔 Download ID: ${downloadId}`);
-          console.warn(`⏱️ No messages received for ${this.heartbeatTimeout / 1000}s`);
+          console.warn(
+            `⏱️ No messages received for ${this.heartbeatTimeout / 1000}s`,
+          );
           console.warn('🔄 Connection may be dead - attempting reconnect...');
           console.warn('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
@@ -202,10 +303,20 @@ class DownloadService {
           if (attempts < this.maxReconnectAttempts) {
             this.reconnectAttempts.set(downloadId, attempts + 1);
             const backoffDelay = Math.min(1000 * Math.pow(2, attempts), 5000);
-            console.log(`🔄 Reconnecting in ${backoffDelay}ms (attempt ${attempts + 1}/${this.maxReconnectAttempts})...\n`);
-            
+            console.log(
+              `🔄 Reconnecting in ${backoffDelay}ms (attempt ${attempts + 1}/${
+                this.maxReconnectAttempts
+              })...\n`,
+            );
+
             setTimeout(() => {
-              this.startSSEListener(downloadId, onProgress, onComplete, onError);
+              this.startSSEListener(
+                downloadId,
+                onProgress,
+                onComplete,
+                onError,
+                localDownloadId,
+              );
             }, backoffDelay);
           } else {
             console.error('❌ Max reconnection attempts exceeded - giving up');
@@ -233,60 +344,148 @@ class DownloadService {
       });
 
       // Handle incoming messages
-      eventSource.addEventListener('message', async (event) => {
+      eventSource.addEventListener('message', async event => {
         const messageTimestamp = new Date().toISOString();
-
+        if (event?.data !== 'null' && event !== null) {
+          console.log(`[${messageTimestamp}] 📨 SSE Message received`, event);
+        }
         // Reset heartbeat on any message
         resetHeartbeat();
 
         try {
           const eventData = event.data || '{}';
-          const data: DownloadEvent = JSON.parse(eventData);
-          if(event?.data !== undefined || event?.data !== null){
-            console.log(`[${messageTimestamp}] 📨 SSE Event received: ${data}`);
-            console.log(`💓 Heartbeat reset`);
+
+          // Skip empty or heartbeat messages
+          if (!eventData || eventData === '{}' || eventData.trim() === '') {
+            console.log(
+              `[${messageTimestamp}] 💓 Heartbeat/keepalive message received`,
+            );
+            return;
           }
 
+          const data: DownloadEvent = JSON.parse(eventData);
+          // console.log(`[${messageTimestamp}] 📨 SSE Event received:`, data);
+          // console.log(`💓 Heartbeat reset`);
+
           switch (data?.type) {
-            case 'download_progress':
-              console.log(`📊 Progress: ${data.progress}%`);
-              console.log(`📝 Status: ${data.status}`);
-              console.log(`💬 Message: ${data.message}`);
-              console.log(`   └─ Download ID: ${data.downloadId}\n`);
+            case 'download_progress': {
+              // Throttle logs: only log when >=500ms since last or >=5% change
+              const now = Date.now();
+              const key = data.downloadId;
+              const last = this.lastProgressLog.get(key) || { ts: 0, pct: -1 };
+              const timeDelta = now - last.ts;
+              const pctDelta = Math.abs((data.progress || 0) - (last.pct || 0));
+              const shouldLog = timeDelta >= 500 || pctDelta >= 5;
+
+              if (shouldLog) {
+                this.lastProgressLog.set(key, { ts: now, pct: data.progress });
+                if (__DEV__) {
+                  console.log(`📊 Progress: ${data.progress}%`);
+                  console.log(`📝 Status: ${data.status}`);
+                  console.log(`💬 Message: ${data.message}`);
+                  console.log(`🆔 Server Download ID: ${data.downloadId}`);
+                  console.log(
+                    `🏠 Local Download ID: ${localDownloadId || 'not provided'}`,
+                  );
+                }
+              }
+
               onProgress?.(data.progress);
               break;
+            }
 
             case 'download_complete':
               console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
               console.log('✅ DOWNLOAD COMPLETE');
               console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-              console.log(`📁 Filename: ${data.file.filename}`);
-              console.log(`📦 MIME Type: ${data.file.mimeType}`);
-              console.log(`📊 File Size: ${(data.file.fileSize / 1024 / 1024).toFixed(2)} MB`);
+
+              // Handle both new format (fileData) and legacy format (file object)
+              const fileContent = data.fileData || data.file?.fileContent;
+              const filename =
+                data.filename ||
+                data.file?.filename ||
+                `download_${data.downloadId}.mp3`;
+              const fileSize = data.fileSize || data.file?.fileSize || 0;
+              const mimeType =
+                data.mimeType || data.file?.mimeType || 'audio/mpeg';
+
+              if (!fileContent) {
+                console.error('❌ No file content found in download response');
+                console.error('Response data:', JSON.stringify(data, null, 2));
+                onError?.('No file content received from server');
+                this.cancelDownload(downloadId);
+                break;
+              }
+
+              console.log(`📁 Filename: ${filename}`);
+              console.log(`📦 MIME Type: ${mimeType}`);
+              console.log(
+                `📊 File Size: ${(fileSize / 1024 / 1024).toFixed(2)} MB`,
+              );
               console.log(`🆔 Download ID: ${data.downloadId}`);
-              console.log(`🎬 Video ID: ${data.file.videoId}`);
               console.log(`💬 Message: ${data.message}`);
               console.log('💾 Saving file to device...');
 
-              try {
-                const filePath = await this.saveFile(data.file.fileContent, data.file.filename);
-                console.log(`✅ File saved successfully!`);
-                console.log(`📂 File Path: ${filePath}`);
-                console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+              // Process file save asynchronously to prevent blocking main thread
+              setTimeout(async () => {
+                try {
+                  logMemoryUsage('Before file save');
+                  let filePath: string;
+                  if (Platform.OS === 'android') {
+                    const uri = await this.promptAndSaveFileAndroid(
+                      fileContent,
+                      filename,
+                      mimeType,
+                    );
+                    if (uri) {
+                      filePath = uri;
+                    } else {
+                      filePath = await this.saveFile(fileContent, filename);
+                    }
+                  } else {
+                    filePath = await this.saveFile(fileContent, filename);
+                  }
 
-                onComplete?.(filePath, data.file.filename);
+                  console.log(`✅ File saved successfully!`);
+                  console.log(`📂 File Path: ${filePath}`);
+                  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-                // Clean up SSE connection
-                this.cancelDownload(downloadId);
-              } catch (error) {
-                console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                console.error('❌ FILE SAVE ERROR');
-                console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-                console.error('Error details:', error);
-                console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-                onError?.('Failed to save downloaded file');
-                this.cancelDownload(downloadId);
-              }
+                  logMemoryUsage('After file save');
+
+                  // Force garbage collection to free up memory
+                  forceGarbageCollection();
+
+                  // Debug the completion before calling callback
+                  debugDownloadCompletion(filename, filePath);
+
+                  // Use crash-safe wrapper for the completion callback
+                  const safeOnComplete = createCrashSafeWrapper(
+                    () => onComplete?.(filePath, filename),
+                    'Download completion callback failed',
+                  );
+
+                  // Use setTimeout to ensure UI updates happen on next tick
+                  setTimeout(safeOnComplete, 0);
+
+                  // Clean up SSE connection
+                  this.cancelDownload(downloadId);
+                } catch (error) {
+                  console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                  console.error('❌ FILE SAVE ERROR');
+                  console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                  console.error('Error details:', error);
+                  console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+                  // Force garbage collection even on error
+                  forceGarbageCollection();
+
+                  setTimeout(() => {
+                    onError?.('Failed to save downloaded file');
+                  }, 0);
+
+                  this.cancelDownload(downloadId);
+                }
+              }, 0);
               break;
 
             case 'download_error':
@@ -304,18 +503,32 @@ class DownloadService {
           }
         } catch (parseError) {
           console.error(`❌ Failed to parse SSE message:`, parseError);
-          console.error(`Raw event data:`, event?.data);
+          console.error(
+            `Raw event data (first 500 chars):`,
+            event?.data?.substring(0, 500),
+          );
+          console.error(`Event data type:`, typeof event?.data);
+          console.error(`Event data length:`, event?.data?.length);
+
+          // Try to identify if this is a large binary data message
+          if (event?.data && event.data.length > 10000) {
+            console.warn(
+              '⚠️ Received very large SSE message, this might be binary data that should be handled differently',
+            );
+          }
         }
       });
 
       // Handle connection errors
-      eventSource.addEventListener('error', (error) => {
+      eventSource.addEventListener('error', error => {
         const errorTimestamp = new Date().toISOString();
         const attempts = this.reconnectAttempts.get(downloadId) || 0;
 
         console.error(`[${errorTimestamp}] ❌ SSE Connection error`);
         console.error(`🆔 Download ID: ${downloadId}`);
-        console.error(`🔄 Reconnect attempt: ${attempts + 1}/${this.maxReconnectAttempts}`);
+        console.error(
+          `🔄 Reconnect attempt: ${attempts + 1}/${this.maxReconnectAttempts}`,
+        );
         console.error('Error details:', error);
 
         // Clear heartbeat timer on error
@@ -325,23 +538,40 @@ class DownloadService {
           this.heartbeatTimers.delete(downloadId);
         }
 
-        // Increment reconnect attempts
-        this.reconnectAttempts.set(downloadId, attempts + 1);
-
         // Check if we should give up
         if (attempts >= this.maxReconnectAttempts) {
           console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
           console.error('❌ SSE CONNECTION FAILED');
           console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-          console.error(`Max reconnection attempts (${this.maxReconnectAttempts}) exceeded`);
+          console.error(
+            `Max reconnection attempts (${this.maxReconnectAttempts}) exceeded`,
+          );
           console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
           onError?.('Connection lost - please try again');
           this.cancelDownload(downloadId);
         } else {
+          // Increment reconnect attempts
+          this.reconnectAttempts.set(downloadId, attempts + 1);
+
           // Calculate exponential backoff delay
           const backoffDelay = Math.min(1000 * Math.pow(2, attempts), 10000);
-          console.log(`🔄 Reconnecting in ${backoffDelay}ms...\n`);
+          console.log(
+            `🔄 Reconnecting in ${backoffDelay}ms (attempt ${attempts + 1}/${
+              this.maxReconnectAttempts
+            })...\n`,
+          );
+
+          // Attempt reconnection with delay
+          setTimeout(() => {
+            this.startSSEListener(
+              downloadId,
+              onProgress,
+              onComplete,
+              onError,
+              localDownloadId,
+            );
+          }, backoffDelay);
         }
       });
     } catch (error) {
@@ -354,15 +584,47 @@ class DownloadService {
     }
   }
 
-  private async saveFile(base64Data: string, filename: string): Promise<string> {
+  setDownloadPath(path: string) {
+    this.customDownloadPath = path;
+    console.log(`📂 Download path set to: ${path}`);
+  }
+
+  private customDownloadPath: string | null = null;
+
+  private async promptAndSaveFileAndroid(
+    base64Data: string,
+    filename: string,
+    mimeType: string,
+  ): Promise<string | null> {
+    const doc = await createDocument({
+      title: filename,
+      mimeType,
+      preferCurrentFolder: true,
+    } as any);
+    if (!doc || !doc.uri) {
+      return null;
+    }
+    await safWriteFile(doc.uri, base64Data, 'base64');
+    return doc.uri;
+  }
+
+  private async saveFile(
+    base64Data: string,
+    filename: string,
+  ): Promise<string> {
     const timestamp = new Date().toISOString();
     console.log(`[${timestamp}] 💾 Starting file save operation...`);
     console.log(`📁 Filename: ${filename}`);
-    console.log(`📦 Data size: ${(base64Data.length / 1024 / 1024).toFixed(2)} MB (base64)`);
+    console.log(
+      `📦 Data size: ${(base64Data.length / 1024 / 1024).toFixed(
+        2,
+      )} MB (base64)`,
+    );
 
     try {
-      // Create downloads directory if it doesn't exist
-      const downloadsPath = `${RNFS.DownloadDirectoryPath}/YTDownloader`;
+      // Use custom path if set, otherwise use default
+      const downloadsPath =
+        this.customDownloadPath || `${RNFS.DownloadDirectoryPath}/YTDownloader`;
       console.log(`📂 Downloads directory: ${downloadsPath}`);
       console.log(`🔨 Creating directory if it doesn't exist...`);
 
@@ -374,11 +636,48 @@ class DownloadService {
       console.log(`📝 Full file path: ${filePath}`);
       console.log(`💾 Writing base64 data to file...`);
 
-      // Write base64 data to file
-      await RNFS.writeFile(filePath, base64Data, 'base64');
+      // Check if base64 data is too large and might cause memory issues
+      const dataSizeMB = base64Data.length / 1024 / 1024;
+      if (dataSizeMB > 100) {
+        console.warn(
+          `⚠️ Large file detected (${dataSizeMB.toFixed(
+            2,
+          )} MB), using chunked write...`,
+        );
+
+        // For very large files, write in chunks to prevent memory issues
+        const chunkSize = 1024 * 1024; // 1MB chunks
+        let offset = 0;
+
+        // Clear the file first
+        await RNFS.writeFile(filePath, '', 'base64');
+
+        while (offset < base64Data.length) {
+          const chunk = base64Data.slice(offset, offset + chunkSize);
+          await RNFS.appendFile(filePath, chunk, 'base64');
+          offset += chunkSize;
+
+          // Log progress for very large files
+          const progress = Math.min(100, (offset / base64Data.length) * 100);
+          if (progress % 25 === 0 || progress === 100) {
+            console.log(`📊 Write progress: ${progress.toFixed(0)}%`);
+          }
+        }
+      } else {
+        // For smaller files, write normally
+        await RNFS.writeFile(filePath, base64Data, 'base64');
+      }
 
       console.log(`✅ File written successfully!`);
-      console.log(`📊 Final file size: ${((await RNFS.stat(filePath)).size / 1024 / 1024).toFixed(2)} MB`);
+
+      // Verify file was written correctly
+      const stats = await RNFS.stat(filePath);
+      console.log(
+        `📊 Final file size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`,
+      );
+
+      // Clear base64Data from memory immediately
+      base64Data = '';
 
       return filePath;
     } catch (error) {
@@ -388,6 +687,10 @@ class DownloadService {
       console.error('Filename:', filename);
       console.error('Error details:', error);
       console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+      // Clear base64Data from memory even on error
+      base64Data = '';
+
       throw new Error('Failed to save file to device');
     }
   }
@@ -395,7 +698,7 @@ class DownloadService {
   cancelDownload(downloadId: string): void {
     const eventSource = this.activeEventSources.get(downloadId);
     const heartbeatTimer = this.heartbeatTimers.get(downloadId);
-    
+
     if (eventSource) {
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log('🛑 CANCELLING DOWNLOAD');
@@ -421,6 +724,37 @@ class DownloadService {
     }
   }
 
+  // Check if a download is stuck (no progress for too long)
+  isDownloadStuck(downloadId: string): boolean {
+    return (
+      this.activeEventSources.has(downloadId) &&
+      (this.reconnectAttempts.get(downloadId) || 0) >= this.maxReconnectAttempts
+    );
+  }
+
+  // Get active download count
+  getActiveDownloadCount(): number {
+    return this.activeEventSources.size;
+  }
+
+  // Get download status
+  getDownloadStatus(
+    downloadId: string,
+  ): 'active' | 'reconnecting' | 'stuck' | 'not_found' {
+    if (!this.activeEventSources.has(downloadId)) {
+      return 'not_found';
+    }
+
+    const attempts = this.reconnectAttempts.get(downloadId) || 0;
+    if (attempts >= this.maxReconnectAttempts) {
+      return 'stuck';
+    } else if (attempts > 0) {
+      return 'reconnecting';
+    }
+
+    return 'active';
+  }
+
   // Clean up all active downloads
   cleanup(): void {
     const activeCount = this.activeEventSources.size;
@@ -429,25 +763,33 @@ class DownloadService {
       console.log('🧹 CLEANING UP ALL DOWNLOADS');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log(`📊 Active SSE connections: ${activeCount}`);
-      
+      console.log(`🔄 Reconnect attempts: ${this.reconnectAttempts.size}`);
+      console.log(`💓 Active heartbeat timers: ${this.heartbeatTimers.size}`);
+
       this.activeEventSources.forEach((eventSource, downloadId) => {
-        console.log(`   └─ Closing connection: ${downloadId}`);
-        
+        const attempts = this.reconnectAttempts.get(downloadId) || 0;
+        const status = this.getDownloadStatus(downloadId);
+        console.log(
+          `   └─ Closing connection: ${downloadId} (${status}, ${attempts} attempts)`,
+        );
+
         // Clear heartbeat timer
         const timer = this.heartbeatTimers.get(downloadId);
         if (timer) {
           clearTimeout(timer);
         }
-        
+
         eventSource.close();
       });
-      
+
       this.activeEventSources.clear();
       this.reconnectAttempts.clear();
       this.heartbeatTimers.clear();
-      
+
       console.log('✅ All SSE connections closed and cleaned up');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    } else {
+      console.log('ℹ️ No active downloads to clean up');
     }
   }
 }
