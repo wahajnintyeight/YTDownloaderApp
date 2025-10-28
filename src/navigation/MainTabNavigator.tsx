@@ -54,9 +54,9 @@ const MainTabNavigator: React.FC = () => {
         tabBarIcon: ({ focused, color }) => (
           <TabIcon name={route.name} focused={focused} color={color} />
         ),
-        tabBarActiveTintColor: theme.colors.primary,
+        tabBarActiveTintColor: theme.colors.secondary,
         tabBarInactiveTintColor: theme.colors.textSecondary,
-        tabBarPressColor: theme.colors.primary + '20',
+        tabBarPressColor: theme.colors.secondary + '20',
         tabBarPressOpacity: 0.8,
         tabBarStyle: {
           backgroundColor: theme.colors.surface,
@@ -100,7 +100,7 @@ const MainTabNavigator: React.FC = () => {
           tabBarLabel: 'Downloads',
           tabBarBadge: activeDownloads > 0 ? activeDownloads : undefined,
           tabBarBadgeStyle: {
-            backgroundColor: theme.colors.primary,
+            backgroundColor: theme.colors.secondary,
             color: '#FFFFFF',
             fontSize: 10,
             fontWeight: '600',

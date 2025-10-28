@@ -5,7 +5,6 @@ import { createDocument, writeFile as safWriteFile } from 'react-native-saf-x';
 import { logMemoryUsage, forceGarbageCollection } from '../utils/memoryUtils';
 import {
   debugDownloadCompletion,
-  debugMemoryState,
   createCrashSafeWrapper,
 } from '../utils/downloadDebug';
 
@@ -23,7 +22,12 @@ export interface DownloadComplete {
   status: 'completed';
   progress: number;
   message: string;
-  fileData: string; // base64 encoded file content
+  // New URL-first contract
+  downloadUrl?: string; // presigned S3 URL
+  expiresIn?: number; // seconds
+  expiresAt?: number; // unix seconds
+  // Legacy payload (kept for backward compatibility during transition)
+  fileData?: string; // base64 encoded file content
   filename?: string;
   fileSize?: number;
   mimeType?: string;
@@ -66,16 +70,26 @@ export interface DownloadResponse {
   };
 }
 
+// Lightweight ID generator: 5 alphanumeric pairs (2 chars each) separated by dashes
+function generateLightweightId(): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const segment = (len: number) =>
+    Array.from({ length: len }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+  return [segment(2), segment(2), segment(2), segment(2), segment(2)].join('-');
+}
+
 class DownloadService {
   private apiBaseUrl: string;
   private sseBaseUrl: string;
   private activeEventSources: Map<string, EventSource> = new Map();
   private reconnectAttempts: Map<string, number> = new Map();
-  private heartbeatTimers: Map<string, NodeJS.Timeout> = new Map();
+  private heartbeatTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private maxReconnectAttempts: number = 5;
   private heartbeatTimeout: number = 30000; // 30 seconds
   // Throttle progress logs per downloadId to avoid JS thread blocking
   private lastProgressLog: Map<string, { ts: number; pct: number }> = new Map();
+  // Ensure progress is monotonic per downloadId
+  private lastForwardedProgress: Map<string, number> = new Map();
   // Track listener context so we can resume after backgrounding
   private listenerContext: Map<string, {
     onProgress?: (progress: number) => void;
@@ -113,9 +127,7 @@ class DownloadService {
           eventSource.close();
           this.activeEventSources.delete(downloadId);
           this.pausedOnBackground.add(downloadId);
-        } catch (e) {
-          // ignore
-        }
+        } catch {}
       });
     }
 
@@ -161,9 +173,29 @@ class DownloadService {
     );
 
     try {
-      console.log('⏳ Sending POST request to download API...');
+      // Generate client-side ID to correlate API and SSE
+      const downloadId = generateLightweightId();
+      console.log(`🆔 Generated client downloadId: ${downloadId}`);
 
-      // Start download request
+      console.log(
+        '🔄 Starting SSE EventSource listener for real-time updates...',
+      );
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+      // Start SSE immediately to avoid missing early events
+      this.startSSEListener(
+        downloadId,
+        onProgress,
+        onComplete,
+        onError,
+        localDownloadId,
+      );
+      // Initialize monotonic progress tracker
+      this.lastForwardedProgress.set(downloadId, 0);
+
+      console.log('⏳ Sending POST request to download API with client downloadId...');
+
+      // Fire the download request including client-provided downloadId
       const response = await fetch(
         `${this.apiBaseUrl}/v2/api/download-yt-videos`,
         {
@@ -176,6 +208,7 @@ class DownloadService {
             format: options.format,
             bitRate: options.bitRate,
             quality: options.quality,
+            downloadId,
           }),
         },
       );
@@ -186,42 +219,21 @@ class DownloadService {
 
       if (!response.ok) {
         console.error(`❌ API Error: HTTP ${response.status}`);
+        // Close SSE started earlier since API failed
+        this.cancelDownload(downloadId);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      // Get download ID from server response
+      // Read response for logging and optional verification
       const responseData: any = await response.json();
-
       console.log('✅ Download API Response:', responseData);
 
-      // Extract download ID from nested result object
-      const downloadId =
-        responseData.result?.downloadId || responseData.downloadId;
-
-      console.log(`🆔 Download ID: ${downloadId}`);
-
-      if (!downloadId) {
-        console.error('❌ No download ID in response');
-        console.error(
-          'Response structure:',
-          JSON.stringify(responseData, null, 2),
+      const serverDownloadId = responseData.result?.downloadId || responseData.downloadId;
+      if (serverDownloadId && serverDownloadId !== downloadId) {
+        console.warn(
+          `⚠️ Server returned different downloadId (${serverDownloadId}) than client (${downloadId}). Proceeding with client ID.`,
         );
-        throw new Error('Server did not return a download ID');
       }
-
-      console.log(
-        '🔄 Starting SSE EventSource listener for real-time updates...',
-      );
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-
-      // Use proper SSE EventSource for real-time updates
-      this.startSSEListener(
-        downloadId,
-        onProgress,
-        onComplete,
-        onError,
-        localDownloadId,
-      );
 
       return downloadId;
     } catch (error) {
@@ -346,8 +358,8 @@ class DownloadService {
       // Handle incoming messages
       eventSource.addEventListener('message', async event => {
         const messageTimestamp = new Date().toISOString();
+        console.log(`[${messageTimestamp}] 📨 SSE Message received`, event);
         if (event?.data !== 'null' && event !== null) {
-          console.log(`[${messageTimestamp}] 📨 SSE Message received`, event);
         }
         // Reset heartbeat on any message
         resetHeartbeat();
@@ -390,6 +402,17 @@ class DownloadService {
                 }
               }
 
+              // Enforce monotonic progress: do not allow decreases
+              const prevForwarded = this.lastForwardedProgress.get(key) ?? 0;
+              if (typeof data.progress === 'number' && data.progress < prevForwarded) {
+                if (__DEV__) {
+                  console.log(
+                    `⏭️ Ignoring regressive progress for ${key}: ${data.progress}% < ${prevForwarded}%`,
+                  );
+                }
+                break;
+              }
+              this.lastForwardedProgress.set(key, data.progress);
               onProgress?.(data.progress);
               break;
             }
@@ -399,34 +422,56 @@ class DownloadService {
               console.log('✅ DOWNLOAD COMPLETE');
               console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-              // Handle both new format (fileData) and legacy format (file object)
+              // URL-first path (preferred)
+              const url = (data as any).downloadUrl;
+              const urlFilename =
+                data.filename || data.file?.filename || `download_${data.downloadId}`;
+              const urlMime = data.mimeType || data.file?.mimeType;
+              const urlExpiresAt = (data as any).expiresAt;
+              const urlExpiresIn = (data as any).expiresIn;
+
+              if (url) {
+                console.log(`🌐 Download URL: ${url}`);
+                if (urlMime) console.log(`📦 MIME Type: ${urlMime}`);
+                if (typeof urlExpiresIn === 'number') {
+                  console.log(`⏳ Expires in: ${urlExpiresIn}s`);
+                }
+                if (typeof urlExpiresAt === 'number') {
+                  console.log(`🕒 Expires at (unix): ${urlExpiresAt}`);
+                }
+
+                // Complete by passing URL as the "filePath" to consumer
+                const safeOnComplete = createCrashSafeWrapper(
+                  () => onComplete?.(url, urlFilename),
+                  'Download completion callback (URL) failed',
+                );
+                setTimeout(safeOnComplete, 0);
+                this.cancelDownload(downloadId);
+                break;
+              }
+
+              // Legacy base64 fallback
               const fileContent = data.fileData || data.file?.fileContent;
               const filename =
-                data.filename ||
-                data.file?.filename ||
-                `download_${data.downloadId}.mp3`;
+                data.filename || data.file?.filename || `download_${data.downloadId}.mp3`;
               const fileSize = data.fileSize || data.file?.fileSize || 0;
-              const mimeType =
-                data.mimeType || data.file?.mimeType || 'audio/mpeg';
+              const mimeType = data.mimeType || data.file?.mimeType || 'audio/mpeg';
 
               if (!fileContent) {
-                console.error('❌ No file content found in download response');
+                console.error('❌ No downloadUrl or file content found in response');
                 console.error('Response data:', JSON.stringify(data, null, 2));
-                onError?.('No file content received from server');
+                onError?.('No downloadable content received from server');
                 this.cancelDownload(downloadId);
                 break;
               }
 
               console.log(`📁 Filename: ${filename}`);
               console.log(`📦 MIME Type: ${mimeType}`);
-              console.log(
-                `📊 File Size: ${(fileSize / 1024 / 1024).toFixed(2)} MB`,
-              );
+              console.log(`📊 File Size: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
               console.log(`🆔 Download ID: ${data.downloadId}`);
               console.log(`💬 Message: ${data.message}`);
-              console.log('💾 Saving file to device...');
+              console.log('💾 Saving file to device (legacy payload)...');
 
-              // Process file save asynchronously to prevent blocking main thread
               setTimeout(async () => {
                 try {
                   logMemoryUsage('Before file save');
@@ -451,23 +496,14 @@ class DownloadService {
                   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
                   logMemoryUsage('After file save');
-
-                  // Force garbage collection to free up memory
                   forceGarbageCollection();
-
-                  // Debug the completion before calling callback
                   debugDownloadCompletion(filename, filePath);
 
-                  // Use crash-safe wrapper for the completion callback
                   const safeOnComplete = createCrashSafeWrapper(
                     () => onComplete?.(filePath, filename),
                     'Download completion callback failed',
                   );
-
-                  // Use setTimeout to ensure UI updates happen on next tick
                   setTimeout(safeOnComplete, 0);
-
-                  // Clean up SSE connection
                   this.cancelDownload(downloadId);
                 } catch (error) {
                   console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -476,13 +512,10 @@ class DownloadService {
                   console.error('Error details:', error);
                   console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-                  // Force garbage collection even on error
                   forceGarbageCollection();
-
                   setTimeout(() => {
                     onError?.('Failed to save downloaded file');
                   }, 0);
-
                   this.cancelDownload(downloadId);
                 }
               }, 0);
@@ -604,7 +637,7 @@ class DownloadService {
     if (!doc || !doc.uri) {
       return null;
     }
-    await safWriteFile(doc.uri, base64Data, 'base64');
+    await safWriteFile(doc.uri, base64Data, { encoding: 'base64' } as any);
     return doc.uri;
   }
 
@@ -716,6 +749,7 @@ class DownloadService {
       eventSource.close();
       this.activeEventSources.delete(downloadId);
       this.reconnectAttempts.delete(downloadId);
+      this.lastForwardedProgress.delete(downloadId);
 
       console.log('✅ Download cancelled and cleaned up');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -785,6 +819,7 @@ class DownloadService {
       this.activeEventSources.clear();
       this.reconnectAttempts.clear();
       this.heartbeatTimers.clear();
+      this.lastForwardedProgress.clear();
 
       console.log('✅ All SSE connections closed and cleaned up');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');

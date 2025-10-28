@@ -148,7 +148,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
       
       {showSearchButton && (
         <TouchableOpacity 
-          style={[styles.searchButton, { backgroundColor: theme.colors.primary }]} 
+          style={[styles.searchButton, { backgroundColor: theme.colors.secondary }]} 
           onPress={handleSubmit}
           activeOpacity={0.8}
         >

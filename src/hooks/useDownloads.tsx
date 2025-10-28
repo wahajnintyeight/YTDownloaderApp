@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useReducer, ReactNode, useRef } from 'react';
+import React, { createContext, useContext, useReducer, ReactNode, useRef, useEffect } from 'react';
+import { useDialog } from './useDialog';
 import {
   Download,
   Video,
@@ -69,9 +70,10 @@ const downloadReducer = (
           console.log(
             `📦 Reducer: Updating download ${download.id} to progress ${action.payload.progress}, status: downloading`,
           );
+          const nextProgress = Math.max(download.progress ?? 0, action.payload.progress);
           return {
             ...download,
-            progress: action.payload.progress,
+            progress: nextProgress,
             status: 'downloading' as DownloadStatus,
             serverDownloadId:
               action.payload.serverDownloadId || download.serverDownloadId,
@@ -162,9 +164,74 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
   children,
 }) => {
   const [state, dispatch] = useReducer(downloadReducer, { downloads: [] });
+  const { showDialog } = useDialog();
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   // Throttle map to limit progress updates per download (id -> { pct, ts })
   const lastProgressRef = useRef(new Map<string, { pct: number; ts: number }>());
+  // Monitor timers per download to detect stalls
+  const stallTimersRef = useRef(new Map<string, ReturnType<typeof setInterval>>());
+
+  const ensureStallMonitor = (id: string) => {
+    if (stallTimersRef.current.has(id)) return;
+    const interval = setInterval(() => {
+      const entry = lastProgressRef.current.get(id);
+      const downloads = stateRef.current.downloads;
+      const d = downloads.find(x => x.id === id);
+      if (!d) {
+        clearInterval(interval);
+        stallTimersRef.current.delete(id);
+        return;
+      }
+      if (!(d.status === 'pending' || d.status === 'downloading')) {
+        clearInterval(interval);
+        stallTimersRef.current.delete(id);
+        return;
+      }
+      const lastTs = entry?.ts ?? 0;
+      const since = Date.now() - lastTs;
+      if (since >= 35000) {
+        // Prevent repeated prompts: bump ts to now
+        lastProgressRef.current.set(id, { pct: entry?.pct ?? 0, ts: Date.now() });
+        // Use custom dialog system
+        showDialog({
+          type: 'warning',
+          title: 'Download taking longer than usual',
+          message: 'This download seems stuck. Do you want to retry?',
+          size: 'large',
+          buttons: [
+            {
+              text: 'Keep Waiting',
+              style: 'cancel',
+              onPress: () => {},
+            },
+            {
+              text: 'Retry',
+              style: 'default',
+              onPress: async () => {
+                try {
+                  const current = stateRef.current.downloads.find(x => x.id === id);
+                  if (!current) return;
+                  cancelDownload(id);
+                  await startDownload(current.video, current.format, current.quality);
+                } catch {}
+              },
+            },
+            {
+              text: 'Cancel Download',
+              style: 'destructive',
+              onPress: () => cancelDownload(id),
+            },
+          ],
+          dismissible: true,
+        });
+      }
+    }, 5000);
+    stallTimersRef.current.set(id, interval);
+  };
 
   const startDownload = async (
     video: Video,
@@ -177,6 +244,9 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
       type: 'START_DOWNLOAD',
       payload: { id: localDownloadId, video, format, quality },
     });
+    // Initialize progress and stall monitor
+    lastProgressRef.current.set(localDownloadId, { pct: 0, ts: Date.now() });
+    ensureStallMonitor(localDownloadId);
 
     try {
       // Determine bitRate or quality based on format
@@ -279,7 +349,10 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
       return;
     }
 
-    lastProgressRef.current.set(id, { pct: progress, ts: now });
+    if (progress > lastPct) {
+      lastProgressRef.current.set(id, { pct: progress, ts: now });
+    }
+    ensureStallMonitor(id);
     if (__DEV__) {
       // Reduce noisy logs in development
       if (pctDelta >= 5 || timeDelta >= 500) {
@@ -291,10 +364,23 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
 
   const completeDownload = (id: string, filePath: string) => {
     dispatch({ type: 'COMPLETE_DOWNLOAD', payload: { id, filePath } });
+    // Cleanup monitors
+    const t = stallTimersRef.current.get(id);
+    if (t) {
+      clearInterval(t);
+      stallTimersRef.current.delete(id);
+    }
+    lastProgressRef.current.delete(id);
   };
 
   const failDownload = (id: string, error: string) => {
     dispatch({ type: 'FAIL_DOWNLOAD', payload: { id, error } });
+    const t = stallTimersRef.current.get(id);
+    if (t) {
+      clearInterval(t);
+      stallTimersRef.current.delete(id);
+    }
+    lastProgressRef.current.delete(id);
   };
 
   const cancelDownload = (id: string) => {
@@ -320,6 +406,12 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
 
     // Update local state
     dispatch({ type: 'CANCEL_DOWNLOAD', payload: { id } });
+    const t = stallTimersRef.current.get(id);
+    if (t) {
+      clearInterval(t);
+      stallTimersRef.current.delete(id);
+    }
+    lastProgressRef.current.delete(id);
   };
 
   const deleteDownload = (id: string) => {
@@ -330,6 +422,12 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
     // Clean any bookkeeping
     pendingCancelSet.delete(id);
     downloadIdMap.delete(id);
+    const t = stallTimersRef.current.get(id);
+    if (t) {
+      clearInterval(t);
+      stallTimersRef.current.delete(id);
+    }
+    lastProgressRef.current.delete(id);
   };
 
   // Cleanup function for stuck downloads

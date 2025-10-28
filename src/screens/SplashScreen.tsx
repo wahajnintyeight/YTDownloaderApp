@@ -67,7 +67,7 @@ const SplashScreen: React.FC = () => {
     logo: {
       fontSize: 48,
       fontWeight: '700',
-      color: theme.colors.primary,
+      color: theme.colors.secondary,
       marginBottom: theme.spacing.sm,
     },
     subtitle: {
@@ -111,7 +111,7 @@ const SplashScreen: React.FC = () => {
 
       {showLoading && (
         <Animated.View style={[styles.loadingContainer, { opacity: fadeAnim }]}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <ActivityIndicator size="large" color={theme.colors.secondary} />
           <Text style={styles.loadingText}>Initializing...</Text>
         </Animated.View>
       )}

@@ -31,7 +31,7 @@ const DownloadProgress: React.FC<DownloadProgressProps> = ({
     };
   });
 
-  const progressColor = progress >= 100 ? theme.colors.success || '#10b981' : theme.colors.primary;
+  const progressColor = progress >= 100 ? (theme.colors.success || '#10b981') : theme.colors.secondary;
 
   const styles = useMemo(() => StyleSheet.create({
     container: {

@@ -12,6 +12,7 @@ export interface DialogConfig {
   message: string;
   buttons?: DialogButton[];
   dismissible?: boolean; // Can be dismissed by tapping backdrop
+  size?: 'default' | 'large';
 }
 
 export interface DialogState {

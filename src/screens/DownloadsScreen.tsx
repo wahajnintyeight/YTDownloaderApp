@@ -7,7 +7,6 @@ import {
   StatusBar,
   TouchableOpacity,
   Image,
-  Alert,
   Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,6 +15,7 @@ import { useDownloads } from '../hooks/useDownloads';
 import { Download, DownloadStatus } from '../types/video';
 // removed unused imports
 import DownloadProgress from '../components/DownloadProgress';
+import { useDialog } from '../hooks/useDialog';
 
 type DownloadItemProps = {
   item: Download;
@@ -37,6 +37,7 @@ const DownloadItem: React.FC<DownloadItemProps> = ({
   s,
 }) => {
   const scaleValue = useRef(new Animated.Value(1)).current;
+  const { showDialog } = useDialog();
 
   const handlePressIn = () => {
     Animated.spring(scaleValue, {
@@ -53,16 +54,20 @@ const DownloadItem: React.FC<DownloadItemProps> = ({
   };
 
   const handleLongPress = () => {
-    Alert.alert(
-      'Remove Download',
-      `Remove "${item.video.title.substring(0, 40)}${
-        item.video.title.length > 40 ? '...' : ''
-      }"?`,
-      [
-        { text: 'Keep', style: 'cancel' },
+    const title = 'Remove Download';
+    const message = `Remove "${item.video.title.substring(0, 40)}${
+      item.video.title.length > 40 ? '...' : ''
+    }"?`;
+    showDialog({
+      type: 'warning',
+      title,
+      message,
+      buttons: [
+        { text: 'Keep', style: 'cancel', onPress: () => {} },
         { text: 'Remove', style: 'destructive', onPress: () => onDelete(item.id) },
       ],
-    );
+      dismissible: true,
+    });
   };
 
   return (
@@ -166,24 +171,34 @@ const DownloadsScreen: React.FC = () => {
   const { theme, isDark } = useTheme();
   const { downloads, cancelDownload, deleteDownload, forceCleanupAllDownloads } =
     useDownloads();
+  const { showDialog } = useDialog();
   // removed unused navigation
 
   const handleForceCleanup = () => {
-    Alert.alert(
-      'Force Cleanup',
-      'This will cancel all active downloads and clear stuck connections. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
+    showDialog({
+      type: 'warning',
+      title: 'Force Cleanup',
+      message:
+        'This will cancel all active downloads and clear stuck connections. Continue?',
+      buttons: [
+        { text: 'Cancel', style: 'cancel', onPress: () => {} },
         {
           text: 'Cleanup',
           style: 'destructive',
           onPress: () => {
             forceCleanupAllDownloads();
-            Alert.alert('Success', 'All downloads cleaned up successfully');
+            showDialog({
+              type: 'success',
+              title: 'Success',
+              message: 'All downloads cleaned up successfully',
+              buttons: [{ text: 'OK', style: 'default', onPress: () => {} }],
+              dismissible: true,
+            });
           },
         },
       ],
-    );
+      dismissible: true,
+    });
   };
 
   const activeDownloads = downloads.filter(

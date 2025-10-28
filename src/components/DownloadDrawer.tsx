@@ -327,7 +327,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
               <Text
                 style={[
                   styles.expandButtonText,
-                  { color: theme.colors.primary },
+                  { color: theme.colors.secondary },
                 ]}
               >
                 {showAllFormats
@@ -346,11 +346,11 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
                 {
                   backgroundColor:
                     selectedFormat === format
-                      ? theme.colors.primary
-                      : theme.colors.surface,
+                      ? theme.colors.secondary
+                      : '#FFFFFF',
                   borderColor:
                     selectedFormat === format
-                      ? theme.colors.primary
+                      ? theme.colors.secondary
                       : theme.colors.border,
                 },
               ]}
@@ -360,8 +360,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
                 style={[
                   styles.optionText,
                   {
-                    color:
-                      selectedFormat === format ? '#FFFFFF' : theme.colors.text,
+                    color: selectedFormat === format ? '#FFFFFF' : '#000000',
                     fontWeight: selectedFormat === format ? '600' : '400',
                   },
                 ]}
@@ -394,7 +393,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
               <Text
                 style={[
                   styles.expandButtonText,
-                  { color: theme.colors.primary },
+                  { color: theme.colors.secondary },
                 ]}
               >
                 {showAllQualities
@@ -413,11 +412,11 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
                 {
                   backgroundColor:
                     selectedQuality === quality
-                      ? theme.colors.primary
-                      : theme.colors.surface,
+                      ? theme.colors.secondary
+                      : '#FFFFFF',
                   borderColor:
                     selectedQuality === quality
-                      ? theme.colors.primary
+                      ? theme.colors.secondary
                       : theme.colors.border,
                 },
               ]}
@@ -427,10 +426,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
                 style={[
                   styles.optionText,
                   {
-                    color:
-                      selectedQuality === quality
-                        ? '#FFFFFF'
-                        : theme.colors.text,
+                    color: selectedQuality === quality ? '#FFFFFF' : '#000000',
                     fontWeight: selectedQuality === quality ? '600' : '400',
                   },
                 ]}
@@ -455,7 +451,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
     },
     drawerContainer: {
       height: DRAWER_HEIGHT,
-      backgroundColor: theme.colors.background,
+      backgroundColor: theme.colors.surface,
       borderTopLeftRadius: 20,
       borderTopRightRadius: 20,
       overflow: 'hidden',
@@ -545,7 +541,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
       fontSize: 14,
     },
     downloadButton: {
-      backgroundColor: theme.colors.primary,
+      backgroundColor: theme.colors.secondary,
       paddingVertical: theme.spacing.md,
       borderRadius: 12,
       alignItems: 'center',

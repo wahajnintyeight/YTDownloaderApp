@@ -66,7 +66,7 @@ const AnimatedDialog: React.FC<AnimatedDialogProps> = ({ visible, config, onDism
         }),
       ]).start();
     }
-  }, [visible]);
+  }, [visible, backdropOpacity, contentScale, contentOpacity]);
 
   const getDialogColor = (type: DialogType): string => {
     switch (type) {
@@ -75,7 +75,7 @@ const AnimatedDialog: React.FC<AnimatedDialogProps> = ({ visible, config, onDism
       case 'error':
         return theme.colors.error;
       case 'warning':
-        return '#FF9500';
+        return '#FF1744';
       case 'confirm':
         return theme.colors.primary;
       default:
@@ -227,30 +227,54 @@ const AnimatedDialog: React.FC<AnimatedDialogProps> = ({ visible, config, onDism
           />
         </Animated.View>
 
-        <Animated.View 
+        <Animated.View
           style={[
-            styles.dialogContainer, 
-            { 
+            styles.dialogContainer,
+            {
               transform: [{ scale: contentScale }],
               opacity: contentOpacity,
-            }
+            },
+            config.size === 'large' && {
+              width: screenWidth - 24,
+              maxWidth: 420,
+            },
           ]}
         >
           <View style={styles.header}>
-            <View style={styles.iconContainer}>
-              {dialogIcon}
-            </View>
-            <Text style={styles.title}>{config.title}</Text>
+            <View style={styles.iconContainer}>{dialogIcon}</View>
+            <Text
+              style={[
+                styles.title,
+                config.size === 'large' && { fontSize: 22, marginBottom: 12 },
+              ]}
+            >
+              {config.title}
+            </Text>
           </View>
 
-          <Text style={styles.message}>{config.message}</Text>
+          <Text
+            style={[
+              styles.message,
+              config.size === 'large' && {
+                fontSize: 19,
+                lineHeight: 26,
+                paddingHorizontal: 28,
+                paddingBottom: 28,
+              },
+            ]}
+          >
+            {config.message}
+          </Text>
 
           <View style={styles.buttonsContainer}>
             {buttons.map((button, index) => (
               <React.Fragment key={index}>
                 {index > 0 && <View style={styles.buttonSeparator} />}
                 <TouchableOpacity
-                  style={styles.button}
+                  style={[
+                    styles.button,
+                    config.size === 'large' && { paddingVertical: 18 },
+                  ]}
                   onPress={() => handleButtonPress(button.onPress)}
                   activeOpacity={0.7}
                 >
@@ -260,6 +284,7 @@ const AnimatedDialog: React.FC<AnimatedDialogProps> = ({ visible, config, onDism
                       button.style === 'cancel' && styles.cancelButtonText,
                       button.style === 'destructive' && styles.destructiveButtonText,
                       button.style === 'default' && styles.defaultButtonText,
+                      config.size === 'large' && { fontSize: 17 },
                     ]}
                   >
                     {button.text}
