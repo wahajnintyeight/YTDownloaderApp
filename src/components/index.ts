@@ -1,6 +1,8 @@
-export { default as SearchBar } from './SearchBar';
-export { default as VideoResultCard } from './VideoResultCard';
-export { default as LoadingAnimation } from './LoadingAnimation';
-export { default as DownloadModal } from './DownloadModal';
-export { default as AppHeader } from './AppHeader';
-export { default as SearchIcon } from './SearchIcon';
+/**
+ * Centralized component exports
+ * DRY principle: Single source of truth for all component imports
+ */
+
+export { DownloadSettingsIcon } from './DownloadSettingsIcon';
+export { DownloadSettingsModal } from './DownloadSettingsModal';
+export { DownloadedVideosList } from './DownloadedVideosList';

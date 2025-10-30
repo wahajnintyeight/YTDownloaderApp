@@ -1,6 +1,5 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
-import Svg, { Path, Circle, Rect, G } from 'react-native-svg';
+import Svg, { Path, Circle, Rect } from 'react-native-svg';
 
 interface IconProps {
   size?: number;
@@ -62,7 +61,8 @@ export const DownloadIcon: React.FC<IconProps> = ({
 
 export const PlayIcon: React.FC<IconProps> = ({ 
   size = 24, 
-  color = '#000' 
+  color = '#000',
+  strokeWidth: _strokeWidth = 2,
 }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <Path 
@@ -202,6 +202,29 @@ export const MoreHorizontalIcon: React.FC<IconProps> = ({
     <Circle cx="12" cy="12" r="1" fill={color} />
     <Circle cx="19" cy="12" r="1" fill={color} />
     <Circle cx="5" cy="12" r="1" fill={color} />
+  </Svg>
+);
+
+export const SettingsIcon: React.FC<IconProps> = ({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path
+      d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Path
+      d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c0 .65.39 1.24 1 1.51H21a2 2 0 1 1 0 4h-.09c-.68.27-1.17.86-1.51 1.49Z"
+      stroke={color}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
   </Svg>
 );
 

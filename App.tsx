@@ -11,8 +11,9 @@ import { ThemeProvider } from './src/hooks/useTheme';
 import { DownloadProvider } from './src/hooks/useDownloads';
 import { DialogProvider } from './src/contexts/DialogContext';
 import { SettingsProvider } from './src/contexts/SettingsContext';
-import AppNavigator from './src/navigation/AppNavigator';
+import { AppNavigator } from './src/navigation/AppNavigator';
 import { logger } from './src/utils/logger';
+import { downloadService } from './src/services';
 
 // Enable console logs in development
 if (__DEV__) {
@@ -48,6 +49,8 @@ function App(): React.JSX.Element {
     
     return () => {
       logger.info('👋 App unmounting');
+      // Ensure all active SSE connections are closed
+      downloadService.cleanup();
     };
   }, []);
 

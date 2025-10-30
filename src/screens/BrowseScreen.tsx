@@ -266,7 +266,7 @@ const BrowseScreen: React.FC = () => {
           <FlatList
             data={results}
             renderItem={renderVideoItem}
-            keyExtractor={item => item.id}
+            keyExtractor={(item, index) => `${item.id}-${index}`}
             contentContainerStyle={styles.listContent}
             refreshControl={
               <RefreshControl
@@ -281,11 +281,6 @@ const BrowseScreen: React.FC = () => {
             maxToRenderPerBatch={5}
             initialNumToRender={10}
             removeClippedSubviews={true}
-            getItemLayout={(data, index) => ({
-              length: 100, // Approximate item height
-              offset: 100 * index,
-              index,
-            })}
             onEndReached={handleLoadMore}
             onEndReachedThreshold={0.5}
             ListFooterComponent={

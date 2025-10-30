@@ -1,12 +1,20 @@
 import RNFS from 'react-native-fs';
 import EventSource from 'react-native-sse';
-import { Platform, AppState, AppStateStatus } from 'react-native';
-import { createDocument, writeFile as safWriteFile } from 'react-native-saf-x';
+import { AppState, AppStateStatus } from 'react-native';
+import { Buffer } from 'buffer';
+import {
+  writeFile as safWriteFile,
+  createFile,
+  exists,
+  unlink,
+} from 'react-native-saf-x';
 import { logMemoryUsage, forceGarbageCollection } from '../utils/memoryUtils';
 import {
   debugDownloadCompletion,
   createCrashSafeWrapper,
 } from '../utils/downloadDebug';
+import { storageService, DownloadedVideo } from './storageService';
+import { API_BASE_URL, SSE_BASE_URL } from '../config/env';
 
 export interface DownloadProgress {
   type: 'download_progress';
@@ -57,6 +65,7 @@ export interface DownloadOptions {
   format: 'mp3' | 'mp4' | 'webm';
   bitRate?: string; // For audio formats like '320k'
   quality?: string; // For video formats like '720p'
+  videoTitle?: string; // Human-friendly title to persist and use for filename
 }
 
 export interface DownloadResponse {
@@ -72,9 +81,13 @@ export interface DownloadResponse {
 
 // Lightweight ID generator: 5 alphanumeric pairs (2 chars each) separated by dashes
 function generateLightweightId(): string {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const alphabet =
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   const segment = (len: number) =>
-    Array.from({ length: len }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+    Array.from(
+      { length: len },
+      () => alphabet[Math.floor(Math.random() * alphabet.length)],
+    ).join('');
   return [segment(2), segment(2), segment(2), segment(2), segment(2)].join('-');
 }
 
@@ -83,39 +96,56 @@ class DownloadService {
   private sseBaseUrl: string;
   private activeEventSources: Map<string, EventSource> = new Map();
   private reconnectAttempts: Map<string, number> = new Map();
-  private heartbeatTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  private heartbeatTimers: Map<string, ReturnType<typeof setTimeout>> =
+    new Map();
   private maxReconnectAttempts: number = 5;
   private heartbeatTimeout: number = 30000; // 30 seconds
   // Throttle progress logs per downloadId to avoid JS thread blocking
   private lastProgressLog: Map<string, { ts: number; pct: number }> = new Map();
   // Ensure progress is monotonic per downloadId
   private lastForwardedProgress: Map<string, number> = new Map();
+  // Track first progress update per downloadId to skip initial 95%
+  private firstProgressReceived: Map<string, boolean> = new Map();
   // Track listener context so we can resume after backgrounding
-  private listenerContext: Map<string, {
-    onProgress?: (progress: number) => void;
-    onComplete?: (filePath: string, filename: string) => void;
-    onError?: (error: string) => void;
-    localDownloadId?: string;
-  }> = new Map();
+  private listenerContext: Map<
+    string,
+    {
+      onProgress?: (progress: number) => void;
+      onComplete?: (filePath: string, filename: string) => void;
+      onError?: (error: string) => void;
+      localDownloadId?: string;
+    }
+  > = new Map();
   private pausedOnBackground: Set<string> = new Set();
   private appState: AppStateStatus = 'active';
 
   constructor(
-    apiBaseUrl: string = 'https://api.theprojectphoenix.top',
-    sseBaseUrl: string = 'https://sse.theprojectphoenix.top',
+    apiBaseUrl: string = API_BASE_URL,
+    sseBaseUrl: string = SSE_BASE_URL,
   ) {
-    this.apiBaseUrl = apiBaseUrl; //'http://192.168.100.10:8881'; // ;
-    this.sseBaseUrl = sseBaseUrl; //'http://192.168.100.10:8885'; // ;
-
+    this.apiBaseUrl = apiBaseUrl;
+    this.sseBaseUrl = sseBaseUrl;
     // Manage SSE lifecycle with AppState to reduce background load
     AppState.addEventListener('change', this.handleAppStateChange);
+
+    this.loadDownloadPath();
+  }
+
+  private async loadDownloadPath() {
+    const path = await storageService.getDownloadPath();
+    if (path) {
+      this.customDownloadPath = path;
+    }
   }
 
   private handleAppStateChange = (nextState: AppStateStatus) => {
     const prev = this.appState;
     this.appState = nextState;
 
-    if ((nextState === 'background' || nextState === 'inactive') && prev === 'active') {
+    if (
+      (nextState === 'background' || nextState === 'inactive') &&
+      prev === 'active'
+    ) {
       // Pause all active SSE connections
       this.activeEventSources.forEach((eventSource, downloadId) => {
         try {
@@ -131,7 +161,10 @@ class DownloadService {
       });
     }
 
-    if (nextState === 'active' && (prev === 'background' || prev === 'inactive')) {
+    if (
+      nextState === 'active' &&
+      (prev === 'background' || prev === 'inactive')
+    ) {
       // Resume paused SSE connections
       const ids = Array.from(this.pausedOnBackground.values());
       this.pausedOnBackground.clear();
@@ -166,6 +199,7 @@ class DownloadService {
       format: options.format,
       bitRate: options.bitRate || 'default',
       quality: options.quality || 'default',
+      videoTitle: options.videoTitle,
     });
     console.log(
       '🌐 API Endpoint:',
@@ -193,7 +227,9 @@ class DownloadService {
       // Initialize monotonic progress tracker
       this.lastForwardedProgress.set(downloadId, 0);
 
-      console.log('⏳ Sending POST request to download API with client downloadId...');
+      console.log(
+        '⏳ Sending POST request to download API with client downloadId...',
+      );
 
       // Fire the download request including client-provided downloadId
       const response = await fetch(
@@ -208,6 +244,7 @@ class DownloadService {
             format: options.format,
             bitRate: options.bitRate,
             quality: options.quality,
+            videoTitle: options.videoTitle,
             downloadId,
           }),
         },
@@ -228,7 +265,8 @@ class DownloadService {
       const responseData: any = await response.json();
       console.log('✅ Download API Response:', responseData);
 
-      const serverDownloadId = responseData.result?.downloadId || responseData.downloadId;
+      const serverDownloadId =
+        responseData.result?.downloadId || responseData.downloadId;
       if (serverDownloadId && serverDownloadId !== downloadId) {
         console.warn(
           `⚠️ Server returned different downloadId (${serverDownloadId}) than client (${downloadId}). Proceeding with client ID.`,
@@ -275,6 +313,29 @@ class DownloadService {
     console.log(`⏰ Connected at: ${timestamp}`);
     console.log(`💓 Heartbeat timeout: ${this.heartbeatTimeout / 1000}s`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+    // Helpers: filename sanitization and extension inference
+    const sanitizeFileName = (name: string): string => {
+      const cleaned = (name || '')
+        .replace(/[\\/:*?"<>|]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return cleaned.substring(0, 150) || 'download';
+    };
+
+    const inferExtension = (fmt?: string, mime?: string | null): string => {
+      if (mime) {
+        if (mime.includes('audio/mpeg')) return '.mp3';
+        if (mime.includes('audio/mp4') || mime.includes('video/mp4'))
+          return '.mp4';
+        if (mime.includes('audio/webm') || mime.includes('video/webm'))
+          return '.webm';
+      }
+      if (fmt === 'mp3') return '.mp3';
+      if (fmt === 'mp4') return '.mp4';
+      if (fmt === 'webm') return '.webm';
+      return '';
+    };
 
     try {
       // Create EventSource connection (removed lineEndingCharacter option)
@@ -397,14 +458,30 @@ class DownloadService {
                   console.log(`💬 Message: ${data.message}`);
                   console.log(`🆔 Server Download ID: ${data.downloadId}`);
                   console.log(
-                    `🏠 Local Download ID: ${localDownloadId || 'not provided'}`,
+                    `🏠 Local Download ID: ${
+                      localDownloadId || 'not provided'
+                    }`,
                   );
                 }
               }
 
+              // Skip first progress if it's 95% (SSE quirk)
+              const isFirstProgress = !this.firstProgressReceived.get(key);
+              if (isFirstProgress && data.progress === 95) {
+                if (__DEV__) {
+                  console.log(`⏭️ Skipping initial 95% progress for ${key}`);
+                }
+                this.firstProgressReceived.set(key, true);
+                break;
+              }
+              this.firstProgressReceived.set(key, true);
+
               // Enforce monotonic progress: do not allow decreases
               const prevForwarded = this.lastForwardedProgress.get(key) ?? 0;
-              if (typeof data.progress === 'number' && data.progress < prevForwarded) {
+              if (
+                typeof data.progress === 'number' &&
+                data.progress < prevForwarded
+              ) {
                 if (__DEV__) {
                   console.log(
                     `⏭️ Ignoring regressive progress for ${key}: ${data.progress}% < ${prevForwarded}%`,
@@ -424,8 +501,6 @@ class DownloadService {
 
               // URL-first path (preferred)
               const url = (data as any).downloadUrl;
-              const urlFilename =
-                data.filename || data.file?.filename || `download_${data.downloadId}`;
               const urlMime = data.mimeType || data.file?.mimeType;
               const urlExpiresAt = (data as any).expiresAt;
               const urlExpiresIn = (data as any).expiresIn;
@@ -440,25 +515,89 @@ class DownloadService {
                   console.log(`🕒 Expires at (unix): ${urlExpiresAt}`);
                 }
 
-                // Complete by passing URL as the "filePath" to consumer
-                const safeOnComplete = createCrashSafeWrapper(
-                  () => onComplete?.(url, urlFilename),
-                  'Download completion callback (URL) failed',
-                );
-                setTimeout(safeOnComplete, 0);
-                this.cancelDownload(downloadId);
+                // Resolve the URL to a file on disk and hide URL from UI
+                setTimeout(async () => {
+                  try {
+                    // Determine desired filename: videoTitle + extension, fallback to server filename
+                    const providedTitle = (data as any).videoTitle as
+                      | string
+                      | undefined;
+                    const serverFilename =
+                      data.filename ||
+                      data.file?.filename ||
+                      `download_${data.downloadId}`;
+                    const baseTitle = sanitizeFileName(
+                      providedTitle || serverFilename,
+                    );
+                    const ext =
+                      inferExtension((data as any).format, urlMime) ||
+                      (serverFilename?.includes('.')
+                        ? serverFilename.substring(
+                            serverFilename.lastIndexOf('.'),
+                          )
+                        : '');
+                    const desiredFilename = ext
+                      ? `${baseTitle}${ext}`
+                      : baseTitle;
+
+                    const savedPath = await this.saveFromUrl(
+                      url,
+                      desiredFilename,
+                      urlMime,
+                    );
+                    const resolvedTitle = (data as any).videoTitle || baseTitle;
+                    const video: DownloadedVideo = {
+                      id: localDownloadId || downloadId,
+                      videoId: (data as any).videoId || '',
+                      title: resolvedTitle,
+                      format: (data as any).format || 'mp3',
+                      filePath: savedPath,
+                      filename: desiredFilename,
+                      downloadedAt: Date.now(),
+                    };
+                    await storageService.addDownloadedVideo(video);
+
+                    const safeOnComplete = createCrashSafeWrapper(
+                      () => onComplete?.(savedPath, desiredFilename),
+                      'Download completion callback (URL-save) failed',
+                    );
+                    setTimeout(safeOnComplete, 0);
+                  } catch (e) {
+                    console.error('❌ Failed saving from URL', e);
+                    onError?.('Failed to save downloaded file');
+                  } finally {
+                    this.cancelDownload(downloadId);
+                  }
+                }, 0);
                 break;
               }
 
               // Legacy base64 fallback
               const fileContent = data.fileData || data.file?.fileContent;
-              const filename =
-                data.filename || data.file?.filename || `download_${data.downloadId}.mp3`;
               const fileSize = data.fileSize || data.file?.fileSize || 0;
-              const mimeType = data.mimeType || data.file?.mimeType || 'audio/mpeg';
+              const mimeType =
+                data.mimeType || data.file?.mimeType || 'audio/mpeg';
+              const providedTitle = (data as any).videoTitle as
+                | string
+                | undefined;
+              const serverFilename =
+                data.filename ||
+                data.file?.filename ||
+                `download_${data.downloadId}.mp3`;
+              const baseTitle = sanitizeFileName(
+                providedTitle || serverFilename,
+              );
+              const ext =
+                inferExtension((data as any).format, mimeType) ||
+                (serverFilename?.includes('.')
+                  ? serverFilename.substring(serverFilename.lastIndexOf('.'))
+                  : '.mp3');
+              const filename = `${baseTitle}${ext}`;
 
               if (!fileContent) {
-                console.error('❌ No downloadUrl or file content found in response');
+                console.error(
+                  '❌ No downloadUrl or file content found in response',
+                );
                 console.error('Response data:', JSON.stringify(data, null, 2));
                 onError?.('No downloadable content received from server');
                 this.cancelDownload(downloadId);
@@ -467,7 +606,9 @@ class DownloadService {
 
               console.log(`📁 Filename: ${filename}`);
               console.log(`📦 MIME Type: ${mimeType}`);
-              console.log(`📊 File Size: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
+              console.log(
+                `📊 File Size: ${(fileSize / 1024 / 1024).toFixed(2)} MB`,
+              );
               console.log(`🆔 Download ID: ${data.downloadId}`);
               console.log(`💬 Message: ${data.message}`);
               console.log('💾 Saving file to device (legacy payload)...');
@@ -476,20 +617,7 @@ class DownloadService {
                 try {
                   logMemoryUsage('Before file save');
                   let filePath: string;
-                  if (Platform.OS === 'android') {
-                    const uri = await this.promptAndSaveFileAndroid(
-                      fileContent,
-                      filename,
-                      mimeType,
-                    );
-                    if (uri) {
-                      filePath = uri;
-                    } else {
-                      filePath = await this.saveFile(fileContent, filename);
-                    }
-                  } else {
-                    filePath = await this.saveFile(fileContent, filename);
-                  }
+                  filePath = await this.saveFile(fileContent, filename);
 
                   console.log(`✅ File saved successfully!`);
                   console.log(`📂 File Path: ${filePath}`);
@@ -624,21 +752,78 @@ class DownloadService {
 
   private customDownloadPath: string | null = null;
 
-  private async promptAndSaveFileAndroid(
-    base64Data: string,
+  private async saveFromUrl(
+    url: string,
     filename: string,
-    mimeType: string,
-  ): Promise<string | null> {
-    const doc = await createDocument({
-      title: filename,
-      mimeType,
-      preferCurrentFolder: true,
-    } as any);
-    if (!doc || !doc.uri) {
-      return null;
+    mimeType?: string | null,
+  ): Promise<string> {
+    // DRY: centralized URL download and save logic
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] 🌐 Starting URL save operation...`);
+    console.log(`🔗 URL: ${url}`);
+    console.log(`📁 Filename: ${filename}`);
+
+    // Use user's preferred download path or default
+    const downloadsPath =
+      this.customDownloadPath || `${RNFS.DownloadDirectoryPath}/YTDownloader`;
+    console.log(`📂 Target directory: ${downloadsPath}`);
+
+    try {
+      const isSaf = downloadsPath.startsWith('content://');
+
+      // Fetch the file from URL
+      console.log(`⬇️ Downloading file from URL...`);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      // Convert response to base64 for RNFS write
+      const arrayBuffer = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer as any);
+      const base64Data = buffer.toString('base64');
+
+      // Write file to disk (SAF vs RNFS)
+      if (isSaf) {
+        // SAF path: use persisted tree URI to create file non-interactively
+        const docMime = mimeType || 'application/octet-stream';
+        // Create a child file under the persisted tree URI
+        const childUri = `${downloadsPath}/${encodeURIComponent(filename)}`;
+
+        // Check if file exists and delete it
+        const fileExists = await exists(childUri);
+        if (fileExists) {
+          console.log(`🗑️ Deleting existing file: ${filename}`);
+          await unlink(childUri);
+        }
+
+        const doc = await createFile(childUri, { mimeType: docMime });
+        const targetUri = doc?.uri;
+        if (!targetUri) throw new Error('Failed to create file in SAF folder');
+        await safWriteFile(targetUri, base64Data, { encoding: 'base64' });
+        console.log(`✅ File saved via SAF: ${targetUri}`);
+        return targetUri; // Return the content URI
+      } else {
+        // Ensure directory exists
+        await RNFS.mkdir(downloadsPath);
+        console.log(`✅ Directory ready`);
+
+        // Construct full file path with backend-provided filename (includes extension)
+        const filePath = `${downloadsPath}/${filename}`;
+        console.log(`📝 Full file path: ${filePath}`);
+
+        await RNFS.writeFile(filePath, base64Data, 'base64');
+
+        // Verify file was written
+        const stats = await RNFS.stat(filePath);
+        console.log(`✅ File saved successfully!`);
+        console.log(
+          `📊 File size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`,
+        );
+        return filePath;
+      }
+    } catch (error) {
+      console.error('❌ Failed to save file from URL', error);
+      throw error;
     }
-    await safWriteFile(doc.uri, base64Data, { encoding: 'base64' } as any);
-    return doc.uri;
   }
 
   private async saveFile(
@@ -658,60 +843,69 @@ class DownloadService {
       // Use custom path if set, otherwise use default
       const downloadsPath =
         this.customDownloadPath || `${RNFS.DownloadDirectoryPath}/YTDownloader`;
+      const isSaf = downloadsPath.startsWith('content://');
       console.log(`📂 Downloads directory: ${downloadsPath}`);
-      console.log(`🔨 Creating directory if it doesn't exist...`);
-
-      await RNFS.mkdir(downloadsPath);
-      console.log(`✅ Directory ready`);
-
-      // Create full file path
-      const filePath = `${downloadsPath}/${filename}`;
-      console.log(`📝 Full file path: ${filePath}`);
-      console.log(`💾 Writing base64 data to file...`);
 
       // Check if base64 data is too large and might cause memory issues
       const dataSizeMB = base64Data.length / 1024 / 1024;
+      // SAF: use persisted tree URI to create file non-interactively
+      if (isSaf) {
+        const defaultMime = filename.endsWith('.mp3')
+          ? 'audio/mpeg'
+          : filename.endsWith('.mp4')
+          ? 'video/mp4'
+          : 'application/octet-stream';
+        // Create a child file under the persisted tree URI
+        const childUri = `${downloadsPath}/${encodeURIComponent(filename)}`;
+
+        // Check if file exists and delete it
+        const fileExists = await exists(childUri);
+        if (fileExists) {
+          console.log(`🗑️ Deleting existing file: ${filename}`);
+          await unlink(childUri);
+        }
+
+        const doc = await createFile(childUri, { mimeType: defaultMime });
+        const targetUri = doc?.uri;
+        if (!targetUri) throw new Error('Failed to create file in SAF folder');
+        await safWriteFile(targetUri, base64Data, { encoding: 'base64' });
+        console.log(`✅ File saved via SAF: ${targetUri}`);
+        base64Data = '';
+        return targetUri;
+      }
+
+      // RNFS path: ensure directory
+      await RNFS.mkdir(downloadsPath);
+      const filePath = `${downloadsPath}/${filename}`;
+
       if (dataSizeMB > 100) {
         console.warn(
           `⚠️ Large file detected (${dataSizeMB.toFixed(
             2,
           )} MB), using chunked write...`,
         );
-
-        // For very large files, write in chunks to prevent memory issues
         const chunkSize = 1024 * 1024; // 1MB chunks
         let offset = 0;
-
-        // Clear the file first
+        // Clear/create the file first
         await RNFS.writeFile(filePath, '', 'base64');
-
         while (offset < base64Data.length) {
           const chunk = base64Data.slice(offset, offset + chunkSize);
           await RNFS.appendFile(filePath, chunk, 'base64');
           offset += chunkSize;
-
-          // Log progress for very large files
           const progress = Math.min(100, (offset / base64Data.length) * 100);
           if (progress % 25 === 0 || progress === 100) {
             console.log(`📊 Write progress: ${progress.toFixed(0)}%`);
           }
         }
       } else {
-        // For smaller files, write normally
         await RNFS.writeFile(filePath, base64Data, 'base64');
       }
 
-      console.log(`✅ File written successfully!`);
-
-      // Verify file was written correctly
       const stats = await RNFS.stat(filePath);
       console.log(
         `📊 Final file size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`,
       );
-
-      // Clear base64Data from memory immediately
       base64Data = '';
-
       return filePath;
     } catch (error) {
       console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -750,6 +944,9 @@ class DownloadService {
       this.activeEventSources.delete(downloadId);
       this.reconnectAttempts.delete(downloadId);
       this.lastForwardedProgress.delete(downloadId);
+      this.firstProgressReceived.delete(downloadId);
+      this.lastProgressLog.delete(downloadId);
+      this.listenerContext.delete(downloadId);
 
       console.log('✅ Download cancelled and cleaned up');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -820,6 +1017,9 @@ class DownloadService {
       this.reconnectAttempts.clear();
       this.heartbeatTimers.clear();
       this.lastForwardedProgress.clear();
+      this.firstProgressReceived.clear();
+      this.lastProgressLog.clear();
+      this.listenerContext.clear();
 
       console.log('✅ All SSE connections closed and cleaned up');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');

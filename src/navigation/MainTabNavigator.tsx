@@ -1,6 +1,6 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { MainTabParamList } from './types';
 import { useTheme } from '../hooks/useTheme';
 import { useDownloads } from '../hooks/useDownloads';
@@ -10,11 +10,14 @@ import DownloadsScreen from '../screens/DownloadsScreen';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
-const TabIcon: React.FC<{ name: string; focused: boolean; color: string }> = ({ name, focused, color }) => {
+/**
+ * Main Tab Navigator
+ * DRY principle: Centralized navigation configuration
+ */
+const TabIcon: React.FC<{ name: keyof MainTabParamList; focused: boolean; color: string }> = ({ name, focused, color }) => {
   const iconSize = 22;
   const strokeWidth = focused ? 2.5 : 2;
-
-  const getIcon = () => {
+  const renderIcon = () => {
     switch (name) {
       case 'Browse':
         return <SearchIcon size={iconSize} color={color} strokeWidth={strokeWidth} />;
@@ -24,86 +27,65 @@ const TabIcon: React.FC<{ name: string; focused: boolean; color: string }> = ({ 
         return null;
     }
   };
-
   return (
-    <View style={{ 
-      alignItems: 'center', 
-      justifyContent: 'center',
-      paddingVertical: 6,
-      paddingHorizontal: 8,
-      minHeight: 32,
-    }}>
-      {getIcon()}
+    <View style={styles.iconWrapper}>
+      {renderIcon()}
     </View>
   );
 };
 
-const MainTabNavigator: React.FC = () => {
-  const { theme } = useTheme();
+export const MainTabNavigator: React.FC = () => {
+  const { theme, isDark } = useTheme();
   const { downloads } = useDownloads();
 
-  // Count active downloads for badge
-  const activeDownloads = downloads.filter(
-    download => download.status === 'downloading' || download.status === 'pending'
-  ).length;
+  const activeDownloads = downloads.filter(d => d.status === 'downloading' || d.status === 'pending').length;
 
   return (
     <Tab.Navigator
+      initialRouteName="Browse"
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarIcon: ({ focused, color }) => (
-          <TabIcon name={route.name} focused={focused} color={color} />
+          <TabIcon
+            name={route.name as keyof MainTabParamList}
+            focused={focused}
+            color={color}
+          />
         ),
         tabBarActiveTintColor: theme.colors.secondary,
         tabBarInactiveTintColor: theme.colors.textSecondary,
         tabBarPressColor: theme.colors.secondary + '20',
         tabBarPressOpacity: 0.8,
-        tabBarStyle: {
-          backgroundColor: theme.colors.surface,
-          borderTopColor: theme.colors.border,
-          borderTopWidth: 0.5,
-          paddingTop: 8,
-          paddingBottom: 8,
-          paddingHorizontal: 16,
-          height: 70,
-          elevation: 8,
-          shadowColor: '#000',
-          shadowOffset: {
-            width: 0,
-            height: -2,
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            backgroundColor: theme.colors.surface,
+            borderTopColor: theme.colors.border,
           },
-          shadowOpacity: 0.1,
-          shadowRadius: 8,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: '600',
-          marginTop: 2,
-          marginBottom: 2,
-        },
-        tabBarItemStyle: {
-          paddingVertical: 4,
-        },
+        ],
+        tabBarLabelStyle: styles.tabBarLabel,
+        tabBarItemStyle: styles.tabBarItem,
       })}
     >
-      <Tab.Screen 
-        name="Browse" 
+      <Tab.Screen
+        name="Browse"
         component={BrowseScreen}
-        options={{
-          tabBarLabel: 'Browse',
-        }}
+        options={{ tabBarLabel: 'Browse' }}
       />
-      <Tab.Screen 
-        name="Downloads" 
+      <Tab.Screen
+        name="Downloads"
         component={DownloadsScreen}
         options={{
           tabBarLabel: 'Downloads',
           tabBarBadge: activeDownloads > 0 ? activeDownloads : undefined,
           tabBarBadgeStyle: {
-            backgroundColor: theme.colors.secondary,
-            color: '#FFFFFF',
+            backgroundColor: isDark ? 'white' : '#4ECDC4',
+            color: isDark ? '#FFFFFF' : '#4ECDC4',
             fontSize: 10,
             fontWeight: '600',
+            // Subtle border in dark mode to enhance legibility
+            borderWidth: isDark ? 1 : 0,
+            borderColor: isDark ? theme.colors.textSecondary : 'transparent',
           },
         }}
       />
@@ -111,4 +93,39 @@ const MainTabNavigator: React.FC = () => {
   );
 };
 
-export default MainTabNavigator;
+const styles = StyleSheet.create({
+  tabBar: {
+    borderTopWidth: 0.5,
+    paddingTop: 8,
+    paddingBottom: 8,
+    paddingHorizontal: 16,
+    height: 70,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  tabBarLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+    marginBottom: 2,
+  },
+  tabBarItem: {
+    paddingVertical: 4,
+  },
+  iconWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    minHeight: 32,
+  },
+  badge: {
+    backgroundColor: '#4ECDC4',
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+});

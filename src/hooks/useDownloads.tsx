@@ -1,4 +1,11 @@
-import React, { createContext, useContext, useReducer, ReactNode, useRef, useEffect } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useReducer,
+  ReactNode,
+  useRef,
+  useEffect,
+} from 'react';
 import { useDialog } from './useDialog';
 import {
   Download,
@@ -9,6 +16,7 @@ import {
 } from '../types/video';
 import { apiClient } from '../services/apiClient';
 import { downloadService } from '../services/downloadService';
+import { storageService } from '../services/storageService';
 import { safeExecute, batchStateUpdate } from '../utils/crashPrevention';
 
 interface DownloadState {
@@ -67,10 +75,21 @@ const downloadReducer = (
       const updatedDownloads = state.downloads.map(download => {
         console.log('ACTION PAYLOAD ID', action);
         if (download.id === action.payload.id) {
+          // Don't update progress if download is already completed, failed, or cancelled
+          if (
+            download.status === 'completed' ||
+            download.status === 'failed' ||
+            download.status === 'cancelled'
+          ) {
+            return download;
+          }
           console.log(
             `📦 Reducer: Updating download ${download.id} to progress ${action.payload.progress}, status: downloading`,
           );
-          const nextProgress = Math.max(download.progress ?? 0, action.payload.progress);
+          const nextProgress = Math.max(
+            download.progress ?? 0,
+            action.payload.progress,
+          );
           return {
             ...download,
             progress: nextProgress,
@@ -171,9 +190,13 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
   }, [state]);
 
   // Throttle map to limit progress updates per download (id -> { pct, ts })
-  const lastProgressRef = useRef(new Map<string, { pct: number; ts: number }>());
+  const lastProgressRef = useRef(
+    new Map<string, { pct: number; ts: number }>(),
+  );
   // Monitor timers per download to detect stalls
-  const stallTimersRef = useRef(new Map<string, ReturnType<typeof setInterval>>());
+  const stallTimersRef = useRef(
+    new Map<string, ReturnType<typeof setInterval>>(),
+  );
 
   const ensureStallMonitor = (id: string) => {
     if (stallTimersRef.current.has(id)) return;
@@ -195,7 +218,10 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
       const since = Date.now() - lastTs;
       if (since >= 35000) {
         // Prevent repeated prompts: bump ts to now
-        lastProgressRef.current.set(id, { pct: entry?.pct ?? 0, ts: Date.now() });
+        lastProgressRef.current.set(id, {
+          pct: entry?.pct ?? 0,
+          ts: Date.now(),
+        });
         // Use custom dialog system
         showDialog({
           type: 'warning',
@@ -213,10 +239,16 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
               style: 'default',
               onPress: async () => {
                 try {
-                  const current = stateRef.current.downloads.find(x => x.id === id);
+                  const current = stateRef.current.downloads.find(
+                    x => x.id === id,
+                  );
                   if (!current) return;
                   cancelDownload(id);
-                  await startDownload(current.video, current.format, current.quality);
+                  await startDownload(
+                    current.video,
+                    current.format,
+                    current.quality,
+                  );
                 } catch {}
               },
             },
@@ -261,6 +293,7 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
       const serverDownloadId = await apiClient.downloadVideo(
         video.id,
         format as 'mp3' | 'mp4' | 'webm',
+        video.title,
         {
           ...options,
           localDownloadId: localDownloadId,
@@ -321,7 +354,10 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
           } finally {
             pendingCancelSet.delete(localDownloadId);
             // Update local state to cancelled
-            dispatch({ type: 'CANCEL_DOWNLOAD', payload: { id: localDownloadId } });
+            dispatch({
+              type: 'CANCEL_DOWNLOAD',
+              payload: { id: localDownloadId },
+            });
           }
         }
       }

@@ -6,9 +6,10 @@ import {
   Video,
 } from '../types/video';
 import { mockSearchVideos } from './mockData';
+import { API_BASE_URL } from '../config/env';
 
 // API endpoint
-const BASE_URL = 'https://api.theprojectphoenix.top/v2/api';
+const BASE_URL = `${API_BASE_URL}/v2/api`;
 const USE_MOCK_DATA = false; // Using real API now
 
 class ApiClient {
@@ -172,6 +173,7 @@ class ApiClient {
   async downloadVideo(
     videoId: string,
     format: 'mp3' | 'mp4' | 'webm',
+    videoTitle: string,
     options?: {
       bitRate?: string;
       quality?: string;
@@ -188,6 +190,7 @@ class ApiClient {
       {
         videoId,
         format,
+        videoTitle: videoTitle,
         bitRate: options?.bitRate,
         quality: options?.quality,
       },

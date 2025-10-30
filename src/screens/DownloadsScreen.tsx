@@ -1,174 +1,27 @@
-import React, { useRef, useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   StatusBar,
   TouchableOpacity,
-  Image,
-  Animated,
+  FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../hooks/useTheme';
 import { useDownloads } from '../hooks/useDownloads';
 import { Download, DownloadStatus } from '../types/video';
-// removed unused imports
-import DownloadProgress from '../components/DownloadProgress';
+import SwipeableDownloadItem from '../components/SwipeableDownloadItem';
 import { useDialog } from '../hooks/useDialog';
+import { SettingsIcon } from '../components/icons/ModernIcons';
 
-type DownloadItemProps = {
-  item: Download;
-  onCancel: (id: string) => void;
-  onDelete: (id: string) => void;
-  statusColor: string;
-  statusText: string;
-  theme: any;
-  s: any;
-};
-
-const DownloadItem: React.FC<DownloadItemProps> = ({
-  item,
-  onCancel,
-  onDelete,
-  statusColor,
-  statusText,
-  theme,
-  s,
-}) => {
-  const scaleValue = useRef(new Animated.Value(1)).current;
-  const { showDialog } = useDialog();
-
-  const handlePressIn = () => {
-    Animated.spring(scaleValue, {
-      toValue: 0.98,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.spring(scaleValue, {
-      toValue: 1,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const handleLongPress = () => {
-    const title = 'Remove Download';
-    const message = `Remove "${item.video.title.substring(0, 40)}${
-      item.video.title.length > 40 ? '...' : ''
-    }"?`;
-    showDialog({
-      type: 'warning',
-      title,
-      message,
-      buttons: [
-        { text: 'Keep', style: 'cancel', onPress: () => {} },
-        { text: 'Remove', style: 'destructive', onPress: () => onDelete(item.id) },
-      ],
-      dismissible: true,
-    });
-  };
-
-  return (
-    <Animated.View
-      style={[
-        {
-          transform: [{ scale: scaleValue }],
-        },
-      ]}
-    >
-      <TouchableOpacity
-        activeOpacity={0.7}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        onLongPress={handleLongPress}
-        delayLongPress={400}
-        style={[s.downloadItem, { backgroundColor: theme.colors.surface }]}
-      >
-        <View style={s.cardContent}>
-          <Image
-            source={{ uri: item.video.thumbnailUrl }}
-            style={s.thumbnail}
-            resizeMode="cover"
-          />
-
-          <View style={s.infoContainer}>
-            <Text
-              style={[s.videoTitle, { color: theme.colors.text }]}
-              numberOfLines={2}
-            >
-              {item.video.title}
-            </Text>
-
-            <View style={s.metaRow}>
-              <Text style={[s.metaText, { color: theme.colors.textSecondary }]}>
-                {item.format.toUpperCase()} • {item.quality === 'audio_only' ? 'Audio' : item.quality}
-              </Text>
-            </View>
-          </View>
-
-          <View style={s.statusContainer}>
-            <View style={[s.statusDot, { backgroundColor: statusColor }]} />
-            <Text style={[s.statusLabel, { color: statusColor }]}>{statusText}</Text>
-          </View>
-        </View>
-
-        {item.status === 'downloading' && (
-          <View style={s.progressSection}>
-            <DownloadProgress
-              progress={item.progress}
-              visible={true}
-            />
-          </View>
-        )}
-
-        {(item.status === 'downloading' || item.status === 'pending') && (
-          <View style={s.actionRow}>
-            <TouchableOpacity
-              style={[s.cancelButton, { borderColor: theme.colors.error }]}
-              onPress={() => onCancel(item.id)}
-            >
-              <Text style={[s.cancelButtonText, { color: theme.colors.error }]}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {item.status === 'failed' && item.error && (
-          <View style={[s.messageContainer, { backgroundColor: theme.colors.error + '15' }]}>
-            <Text style={[s.messageText, { color: theme.colors.error }]}>{item.error}</Text>
-          </View>
-        )}
-
-        {item.status === 'completed' && item.filePath && (
-          <View style={[s.messageContainer, { backgroundColor: theme.colors.success + '15' }]}>
-            <Text style={[s.messageText, { color: theme.colors.success }]}>✓ {item.filePath.split('/').pop()}</Text>
-          </View>
-        )}
-      </TouchableOpacity>
-    </Animated.View>
-  );
-};
-
-const MemoDownloadItem = React.memo(DownloadItem, (prev, next) => {
-  // Avoid re-render unless key fields change or progress integer changes
-  const prevP = Math.round(prev.item.progress);
-  const nextP = Math.round(next.item.progress);
-  return (
-    prev.item.id === next.item.id &&
-    prev.item.status === next.item.status &&
-    prevP === nextP &&
-    prev.item.filePath === next.item.filePath &&
-    prev.item.error === next.item.error &&
-    prev.statusColor === next.statusColor &&
-    prev.statusText === next.statusText &&
-    prev.theme === next.theme &&
-    prev.s === next.s
-  );
-});
+// Removed DownloadItem component - now using SwipeableDownloadItem
 
 const DownloadsScreen: React.FC = () => {
   const { theme, isDark } = useTheme();
+  const navigation = useNavigation();
   const { downloads, cancelDownload, deleteDownload, forceCleanupAllDownloads } =
     useDownloads();
   const { showDialog } = useDialog();
@@ -392,21 +245,24 @@ const DownloadsScreen: React.FC = () => {
     },
   }), [theme]);
 
-  const renderDownloadItem = useCallback(({ item }: { item: Download }) => {
-    const statusColor = getStatusColor(item.status);
-    const statusText = getStatusText(item.status);
-    return (
-      <MemoDownloadItem
-        item={item}
-        onCancel={cancelDownload}
-        onDelete={deleteDownload}
-        statusColor={statusColor}
-        statusText={statusText}
-        theme={theme}
-        s={styles}
-      />
-    );
-  }, [cancelDownload, deleteDownload, theme, styles, getStatusColor, getStatusText]);
+  const renderDownloadItem = useCallback(
+    ({ item }: { item: Download }) => {
+      const statusColor = getStatusColor(item.status);
+      const statusText = getStatusText(item.status);
+      return (
+        <SwipeableDownloadItem
+          item={item}
+          onCancel={cancelDownload}
+          onDelete={deleteDownload}
+          statusColor={statusColor}
+          statusText={statusText}
+          theme={theme}
+          styles={styles}
+        />
+      );
+    },
+    [cancelDownload, deleteDownload, theme, styles, getStatusColor, getStatusText],
+  );
 
   const keyExtractor = useCallback((item: Download) => item.id, []);
 
@@ -420,13 +276,14 @@ const DownloadsScreen: React.FC = () => {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar
-        barStyle={isDark ? 'light-content' : 'dark-content'}
-        backgroundColor={theme.colors.background}
-      />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaView style={styles.container}>
+        <StatusBar
+          barStyle={isDark ? 'light-content' : 'dark-content'}
+          backgroundColor={theme.colors.background}
+        />
 
-      <View style={styles.header}>
+        <View style={styles.header}>
         <View style={styles.headerTop}>
           <View style={styles.headerInfo}>
             <Text style={styles.headerTitle}>Downloads</Text>
@@ -435,25 +292,23 @@ const DownloadsScreen: React.FC = () => {
               {activeDownloads > 0 && ` • ${activeDownloads} active`}
             </Text>
           </View>
-
-          {activeDownloads > 0 && (
-            <TouchableOpacity
-              style={[
-                styles.cleanupButton,
-                { borderColor: theme.colors.error },
-              ]}
-              onPress={handleForceCleanup}
-            >
-              <Text
-                style={[
-                  styles.cleanupButtonText,
-                  { color: theme.colors.error },
-                ]}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
+            {activeDownloads > 0 && (
+              <TouchableOpacity
+                style={[styles.cleanupButton, { borderColor: theme.colors.error }]}
+                onPress={handleForceCleanup}
               >
-                Cleanup
-              </Text>
+                <Text style={[styles.cleanupButtonText, { color: theme.colors.error }]}>Cleanup</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              accessibilityLabel="Open settings"
+              onPress={() => navigation.navigate('Settings' as never)}
+              style={{ paddingHorizontal: 8, paddingVertical: 6 }}
+            >
+              <SettingsIcon size={20} color={theme.colors.text} strokeWidth={2} />
             </TouchableOpacity>
-          )}
+          </View>
         </View>
       </View>
 
@@ -477,7 +332,8 @@ const DownloadsScreen: React.FC = () => {
           renderEmptyState()
         )}
       </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </GestureHandlerRootView>
   );
 };
 
