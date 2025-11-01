@@ -52,7 +52,7 @@ const BrowseScreen: React.FC = () => {
   const handleTestDownload = useCallback(() => {
     // Create a test video object with the specified video ID
     const testVideo: Video = {
-      id: 'QxU6jF7_YTU',
+      id: 'YJVmu6yttiw',
       title: 'Test Video - Sample Download',
       thumbnailUrl: 'https://img.youtube.com/vi/GT8ornYrDEs/mqdefault.jpg',
       duration: 240, // 4 minutes
