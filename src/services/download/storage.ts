@@ -1,5 +1,8 @@
 import RNFS from 'react-native-fs';
 import { Buffer } from 'buffer';
+import ReactNativeBlobUtil from 'react-native-blob-util';
+import { normalizeBase64 } from './chunks';
+
 import {
   writeFile as safWriteFile,
   createFile,
@@ -73,6 +76,11 @@ export async function saveFileToCacheAndExport(
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] 💾 Starting file save operation...`);
   console.log(`📁 Filename: ${filename}`);
+  // sanitize possible data URL prefix and normalize base64 prior to write
+  base64Data = base64Data.startsWith('data:')
+    ? base64Data.slice(base64Data.indexOf(',') + 1)
+    : base64Data;
+  base64Data = normalizeBase64(base64Data);
   console.log(
     `📦 Data size: ${(base64Data.length / 1024 / 1024).toFixed(2)} MB (base64)`,
   );
@@ -83,32 +91,50 @@ export async function saveFileToCacheAndExport(
     // Prefer react-native-blob-util when available (better for large base64)
     let blobFs: any | null = null;
     try {
-      const blob = await import('react-native-blob-util');
-      blobFs = blob?.fs || null;
+      blobFs = ReactNativeBlobUtil.fs || null;
     } catch {
-      blobFs = null;
+      throw new Error('BLOBFS NOT INITIALIZED!');
     }
 
+    console.log(blobFs);
     // Step 1: Always save to app cache
-    const appCacheDir = blobFs
-      ? `${blobFs.dirs.CacheDir}/Downloads`
-      : `${RNFS.CachesDirectoryPath}/Downloads`;
+    const appCacheDir = `${blobFs.dirs.CacheDir}/Downloads`;
 
     if (blobFs) {
-      await blobFs.mkdir(appCacheDir);
+      const cacheDirExists = await blobFs.exists(appCacheDir);
+      if (!cacheDirExists) {
+        await blobFs.mkdir(appCacheDir);
+      }
     } else {
-      await RNFS.mkdir(appCacheDir);
+      throw new Error('BLOBFS NOT INITIALIZED!');
     }
+    //else {
+    // await RNFS.mkdir(appCacheDir);
+    //}
 
     const cachePath = `${appCacheDir}/${filename}`;
     console.log(`📂 App-scoped cache path: ${cachePath}`);
 
     if (blobFs) {
-      // Single write using blob-util
+      // Prefer chunked write for large payloads to avoid native base64 decode issues
       console.log(
         `💾 [blob-util] Saving ${filename} (${dataSizeMB.toFixed(2)} MB)`,
       );
-      await blobFs.writeFile(cachePath, base64Data, 'base64');
+      if (dataSizeMB > 50) {
+        await blobFs.writeFile(cachePath, '', 'utf8');
+        // Use chunk size aligned to base64 4-char quantum
+        const targetChars = 1024 * 1024; // ~1MB of base64 chars
+        const chunkSize = targetChars - (targetChars % 4);
+        let offset = 0;
+        while (offset < base64Data.length) {
+          const end = Math.min(offset + chunkSize, base64Data.length);
+          const chunk = base64Data.slice(offset, end);
+          await blobFs.appendFile(cachePath, chunk, 'base64');
+          offset = end;
+        }
+      } else {
+        await blobFs.writeFile(cachePath, base64Data, 'base64');
+      }
       const stat = await blobFs.stat(cachePath);
       const sizeMb = (Number(stat?.size || 0) / 1024 / 1024).toFixed(2);
       console.log(`✅ File saved: ${sizeMb} MB`);
@@ -119,12 +145,14 @@ export async function saveFileToCacheAndExport(
           `⚠️ [RNFS] Using chunked write for ${dataSizeMB.toFixed(2)} MB...`,
         );
         await RNFS.writeFile(cachePath, '', 'base64');
-        const chunkSize = 1024 * 1024;
+        const targetChars = 1024 * 1024; // ~1MB of base64 chars
+        const chunkSize = targetChars - (targetChars % 4);
         let offset = 0;
         while (offset < base64Data.length) {
-          const chunk = base64Data.slice(offset, offset + chunkSize);
+          const end = Math.min(offset + chunkSize, base64Data.length);
+          const chunk = base64Data.slice(offset, end);
           await RNFS.appendFile(cachePath, chunk, 'base64');
-          offset += chunkSize;
+          offset = end;
         }
       } else {
         await RNFS.writeFile(cachePath, base64Data, 'base64');
@@ -204,6 +232,26 @@ export async function exportToUserLocation(
         ? 'video/webm'
         : 'application/octet-stream';
 
+      // Check file size to prevent OOM during SAF export
+      const stat = blobFs ? await blobFs.stat(sourcePath) : await RNFS.stat(sourcePath);
+      const sizeBytes = Number((stat as any)?.size || 0);
+      const sizeMB = sizeBytes / 1024 / 1024;
+      
+      // For very large files, SAF export will cause OOM - fallback to filesystem Downloads
+      if (sizeMB > 30) {
+        console.warn(
+          `⚠️ Skipping SAF export for large file (${sizeMB.toFixed(2)} MB). Falling back to Downloads folder.`,
+        );
+        const fallbackDir = `${RNFS.DownloadDirectoryPath}/YTDownloader`;
+        try {
+          await RNFS.mkdir(fallbackDir);
+        } catch {}
+        const destPath = `${fallbackDir}/${filename}`;
+        await RNFS.copyFile(sourcePath, destPath);
+        console.log(`✅ Exported large file to: ${destPath}`);
+        return destPath;
+      }
+
       const childUri = `${userPath}/${encodeURIComponent(filename)}`;
 
       const fileExists = await exists(childUri);
@@ -225,10 +273,13 @@ export async function exportToUserLocation(
     }
 
     if (blobFs) {
-      await blobFs.mkdir(userPath);
+      const userDirExists = await blobFs.exists(userPath);
+      if (!userDirExists) {
+        await blobFs.mkdir(userPath);
+      }
       const destPath = `${userPath}/${filename}`;
-      const base64 = await blobFs.readFile(sourcePath, 'base64');
-      await blobFs.writeFile(destPath, base64, 'base64');
+      // Prefer direct filesystem copy to avoid base64 for large files
+      await RNFS.copyFile(sourcePath, destPath);
       console.log(`✅ Exported to: ${destPath}`);
       return destPath;
     } else {

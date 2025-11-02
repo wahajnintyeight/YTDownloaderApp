@@ -1,4 +1,6 @@
 import EventSource from 'react-native-sse';
+import RNFS from 'react-native-fs';
+import { Platform } from 'react-native';
 import { AppState, AppStateStatus } from 'react-native';
 import { logMemoryUsage, forceGarbageCollection } from '../utils/memoryUtils';
 import {
@@ -95,8 +97,6 @@ class DownloadService {
         // Sanitize chunk data: remove all whitespace and invalid chars
         let sanitized = chunkData.replace(/\s/g, '');
         sanitized = sanitized.replace(/[^A-Za-z0-9+/=]/g, '');
-        // Remove padding - it should only be at the end of the complete string
-        sanitized = sanitized.replace(/[=]+$/, '');
 
         chunks[chunkIndex] = sanitized;
         const received =
@@ -158,6 +158,25 @@ class DownloadService {
     const path = await storageService.getDownloadPath();
     if (path) {
       this.customDownloadPath = path;
+      return;
+    }
+
+    // Initialize default path if not already saved
+    try {
+      const defaultPath =
+        Platform.OS === 'android'
+          ? `${RNFS.DownloadDirectoryPath}/YTDownloader`
+          : `${RNFS.DocumentDirectoryPath}/YTDownloader`;
+
+      try {
+        await RNFS.mkdir(defaultPath);
+      } catch {}
+
+      await storageService.setDownloadPath(defaultPath);
+      this.customDownloadPath = defaultPath;
+      console.log(`📂 Default download path initialized: ${defaultPath}`);
+    } catch (e) {
+      console.warn('⚠️ Failed to initialize default download path', e);
     }
   }
 
@@ -544,7 +563,13 @@ class DownloadService {
                 if (!this.chunkBuffer.has(dId)) {
                   this.initializeChunkTracking(dId, total);
                 }
-                const received = this.addChunk(dId, idx, chunkData);
+                // Pre-sanitize chunk and strip padding for non-final chunks
+                let pre = chunkData.replace(/\s/g, '');
+                pre = pre.replace(/[^A-Za-z0-9+/=]/g, '');
+                if (idx < total - 1) {
+                  pre = pre.replace(/[=]+$/, '');
+                }
+                const received = this.addChunk(dId, idx, pre);
                 const totalKnown =
                   this.totalChunksPerDownload.get(dId) || total;
                 const pct = Math.min(100, (received / totalKnown) * 100);
@@ -864,6 +889,9 @@ class DownloadService {
   setDownloadPath(path: string) {
     this.customDownloadPath = path;
     console.log(`📂 Download path set to: ${path}`);
+    // Ensure directory exists and persist for future sessions
+    RNFS.mkdir(path).catch(() => {});
+    storageService.setDownloadPath(path).catch(() => {});
   }
 
   private customDownloadPath: string | null = null;
