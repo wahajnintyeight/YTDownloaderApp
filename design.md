@@ -25,7 +25,7 @@ graph TB
         Storage[Local Storage]
         Download[Download Manager]
     end
-    
+
     subgraph "Backend (Go)"
         Router[HTTP Router]
         SearchHandler[Search Handler]
@@ -33,12 +33,12 @@ graph TB
         YTService[YouTube Service]
         YTDLPService[yt-dlp Service]
     end
-    
+
     subgraph "External Services"
         YouTubeAPI[YouTube Data API v3]
         YTDLP[yt-dlp CLI]
     end
-    
+
     UI --> State
     State --> API
     API --> Router
@@ -88,42 +88,49 @@ AppNavigator
 #### 2. Core Components
 
 **SplashScreen**
+
 - Purpose: Display branding and initialize app
 - Props: None
 - State: Loading status
 - Features: Animated logo, theme-aware colors, initialization logic
 
 **BrowseScreen**
+
 - Purpose: Main screen with search and results
 - Props: None
 - State: Search query, results, loading state
 - Features: Search bar, results list, pull-to-refresh
 
 **SearchBar**
+
 - Purpose: Input component for search queries
 - Props: onSearch, placeholder, value
 - State: Input text
 - Features: Debounced input, clear button, submit on enter
 
 **VideoResultCard**
+
 - Purpose: Display individual video result
 - Props: video (id, title, thumbnail, duration, channel)
 - State: Image loading state
 - Features: Thumbnail with placeholder, formatted duration, tap handler
 
 **DownloadModal**
+
 - Purpose: Configure and initiate downloads
 - Props: video, visible, onClose
 - State: Selected format, quality, location, download progress
 - Features: Format selector, quality selector, location picker, progress bar
 
 **LoadingAnimation**
+
 - Purpose: Display loading states
 - Props: type (search, download, general), visible
 - State: Animation progress
 - Features: Lottie animations, vibrant colors, smooth transitions
 
 **ThemeProvider**
+
 - Purpose: Manage app-wide theming
 - Props: children
 - State: Current theme (dark/light), color palette
@@ -147,6 +154,7 @@ const { results, loading, error, search } = useSearch();
 #### 1. API Endpoints
 
 **Search Endpoint**
+
 ```
 POST /api/v1/search
 Request Body: { "query": string, "maxResults": number }
@@ -154,6 +162,7 @@ Response: { "videos": Video[], "nextPageToken": string }
 ```
 
 **Download Endpoint**
+
 ```
 POST /api/v1/download
 Request Body: { "url": string, "format": string, "quality": string }
@@ -162,6 +171,7 @@ Headers: Content-Type, Content-Disposition, Content-Length
 ```
 
 **Formats Endpoint**
+
 ```
 GET /api/v1/formats?url=<youtube_url>
 Response: { "formats": Format[] }
@@ -170,6 +180,7 @@ Response: { "formats": Format[] }
 #### 2. Service Interfaces
 
 **YouTube Service**
+
 ```go
 type YouTubeService interface {
     Search(ctx context.Context, query string, maxResults int) ([]Video, error)
@@ -178,6 +189,7 @@ type YouTubeService interface {
 ```
 
 **Download Service**
+
 ```go
 type DownloadService interface {
     GetAvailableFormats(ctx context.Context, url string) ([]Format, error)
@@ -217,8 +229,22 @@ interface Download {
 
 // Format options
 type VideoFormat = 'mp4' | 'webm' | 'mp3' | 'mkv';
-type VideoQuality = '144p' | '240p' | '360p' | '480p' | '720p' | '1080p' | '1440p' | '2160p' | 'audio_only';
-type DownloadStatus = 'pending' | 'downloading' | 'completed' | 'failed' | 'cancelled';
+type VideoQuality =
+  | '144p'
+  | '240p'
+  | '360p'
+  | '480p'
+  | '720p'
+  | '1080p'
+  | '1440p'
+  | '2160p'
+  | 'audio_only';
+type DownloadStatus =
+  | 'pending'
+  | 'downloading'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
 // Theme model
 interface Theme {
@@ -289,25 +315,27 @@ type Format struct {
 ### Mobile App Error Handling
 
 **Error Categories**:
+
 1. **Network Errors**: Connection failures, timeouts
 2. **API Errors**: 4xx/5xx responses from backend
 3. **Download Errors**: File system errors, insufficient storage
 4. **Validation Errors**: Invalid user input
 
 **Error Handling Strategy**:
+
 ```typescript
 // Centralized error handler
 class ErrorHandler {
   static handle(error: AppError): UserFacingError {
     // Log error for debugging
     console.error(error);
-    
+
     // Map to user-friendly message
     const message = this.getUserMessage(error);
-    
+
     // Determine if retryable
     const canRetry = this.isRetryable(error);
-    
+
     return { message, canRetry };
   }
 }
@@ -319,6 +347,7 @@ class ErrorBoundary extends React.Component {
 ```
 
 **Retry Logic**:
+
 - Network errors: Exponential backoff (1s, 2s, 4s, 8s)
 - Download failures: Manual retry with option to change format
 - API errors: Retry on 5xx, don't retry on 4xx
@@ -326,6 +355,7 @@ class ErrorBoundary extends React.Component {
 ### Backend Error Handling
 
 **Error Response Format**:
+
 ```go
 type ErrorResponse struct {
     Error   string `json:"error"`
@@ -335,14 +365,15 @@ type ErrorResponse struct {
 ```
 
 **Error Handling Middleware**:
+
 ```go
 func ErrorHandlerMiddleware() gin.HandlerFunc {
     return func(c *gin.Context) {
         c.Next()
-        
+
         if len(c.Errors) > 0 {
             err := c.Errors.Last()
-            
+
             // Map error to HTTP status and response
             status, response := mapError(err)
             c.JSON(status, response)
@@ -352,6 +383,7 @@ func ErrorHandlerMiddleware() gin.HandlerFunc {
 ```
 
 **Error Categories**:
+
 1. **Validation Errors**: 400 Bad Request
 2. **YouTube API Errors**: 502 Bad Gateway or 503 Service Unavailable
 3. **yt-dlp Errors**: 500 Internal Server Error with specific message
@@ -362,23 +394,27 @@ func ErrorHandlerMiddleware() gin.HandlerFunc {
 ### Mobile App Testing
 
 **Unit Tests**:
+
 - Custom hooks (useTheme, useDownloads, useSearch)
 - Utility functions (formatDuration, formatFileSize)
 - API client methods
 - State reducers
 
 **Component Tests**:
+
 - SearchBar: Input handling, validation, submission
 - VideoResultCard: Rendering, image loading, tap handling
 - DownloadModal: Format selection, validation, download initiation
 - LoadingAnimation: Animation states, visibility
 
 **Integration Tests**:
+
 - Search flow: Input → API call → Results display
 - Download flow: Selection → Configuration → Download → Storage
 - Theme switching: System theme detection → App theme update
 
 **E2E Tests** (using Detox):
+
 - Complete user journey: Launch → Search → Select → Download
 - Background download continuation
 - Error scenarios and recovery
@@ -386,17 +422,20 @@ func ErrorHandlerMiddleware() gin.HandlerFunc {
 ### Backend Testing
 
 **Unit Tests**:
+
 - YouTube service: API response parsing
 - Download service: yt-dlp command construction
 - Validators: Request validation logic
 - Utilities: Format conversion, duration parsing
 
 **Integration Tests**:
+
 - Search endpoint: Request → YouTube API → Response
 - Download endpoint: Request → yt-dlp → Stream response
 - Error handling: Invalid requests, API failures
 
 **Load Tests**:
+
 - Concurrent download requests
 - Large file streaming
 - API rate limiting
@@ -404,12 +443,14 @@ func ErrorHandlerMiddleware() gin.HandlerFunc {
 ### Testing Tools
 
 **Mobile**:
+
 - Jest: Unit and component tests
 - React Native Testing Library: Component testing
 - Detox: E2E testing
 - Mock Service Worker: API mocking
 
 **Backend**:
+
 - Go testing package: Unit tests
 - Testify: Assertions and mocking
 - httptest: HTTP handler testing
@@ -420,11 +461,12 @@ func ErrorHandlerMiddleware() gin.HandlerFunc {
 ### Color Palette
 
 **Light Mode**:
+
 ```typescript
 const lightColors = {
-  primary: '#FF6B6B',      // Vibrant red
-  secondary: '#4ECDC4',    // Vibrant teal
-  accent: '#FFE66D',       // Vibrant yellow
+  primary: '#FF6B6B', // Vibrant red
+  secondary: '#4ECDC4', // Vibrant teal
+  accent: '#FFE66D', // Vibrant yellow
   background: '#FFFFFF',
   surface: '#F7F7F7',
   text: '#2D3436',
@@ -436,11 +478,12 @@ const lightColors = {
 ```
 
 **Dark Mode**:
+
 ```typescript
 const darkColors = {
-  primary: '#FF6B6B',      // Vibrant red
-  secondary: '#4ECDC4',    // Vibrant teal
-  accent: '#FFE66D',       // Vibrant yellow
+  primary: '#FF6B6B', // Vibrant red
+  secondary: '#4ECDC4', // Vibrant teal
+  accent: '#FFE66D', // Vibrant yellow
   background: '#1A1A1A',
   surface: '#2D2D2D',
   text: '#FFFFFF',
@@ -480,12 +523,14 @@ const spacing = {
 ### Animation Specifications
 
 **Transitions**:
+
 - Screen transitions: 300ms ease-in-out
 - Modal animations: 250ms ease-out
 - Button press: 150ms ease-in
 - Loading states: Continuous smooth animation
 
 **Loading Animations**:
+
 - Use Lottie for complex animations
 - Fallback to ActivityIndicator for simple cases
 - Color-matched to theme
@@ -493,6 +538,7 @@ const spacing = {
 ### Component Specifications
 
 **SearchBar**:
+
 - Height: 48px
 - Border radius: 24px
 - Padding: 12px 16px
@@ -500,6 +546,7 @@ const spacing = {
 - Debounce: 300ms
 
 **VideoResultCard**:
+
 - Height: 100px
 - Thumbnail: 16:9 aspect ratio, 120px width
 - Padding: 12px
@@ -507,6 +554,7 @@ const spacing = {
 - Elevation/shadow on press
 
 **DownloadModal**:
+
 - Max height: 80% of screen
 - Border radius: 16px (top corners)
 - Backdrop: Semi-transparent black (0.5 opacity)
@@ -517,21 +565,25 @@ const spacing = {
 ### Mobile App Optimizations
 
 1. **Image Loading**:
+
    - Use react-native-fast-image for caching
    - Lazy load images as user scrolls
    - Compress thumbnails on backend
 
 2. **List Rendering**:
+
    - Use FlatList with optimized props (windowSize, maxToRenderPerBatch)
    - Implement getItemLayout for fixed-height items
    - Use React.memo for VideoResultCard
 
 3. **State Management**:
+
    - Minimize re-renders with useMemo and useCallback
    - Split context providers to avoid unnecessary updates
    - Use reducer for complex state logic
 
 4. **Download Management**:
+
    - Use react-native-fs for file operations
    - Implement download queue with concurrency limit (3 concurrent)
    - Stream large files instead of loading into memory
@@ -544,16 +596,19 @@ const spacing = {
 ### Backend Optimizations
 
 1. **YouTube API**:
+
    - Cache search results (5 minutes TTL)
    - Batch requests where possible
    - Implement rate limiting to avoid quota exhaustion
 
 2. **Video Streaming**:
+
    - Stream files directly without buffering entire file
    - Use chunked transfer encoding
    - Implement range requests for resume capability
 
 3. **yt-dlp Integration**:
+
    - Reuse yt-dlp process pool
    - Cache format information
    - Timeout long-running downloads (30 minutes)
@@ -568,11 +623,13 @@ const spacing = {
 ### Mobile App Security
 
 1. **API Communication**:
+
    - Use HTTPS only
    - Implement certificate pinning
    - Validate SSL certificates
 
 2. **Data Storage**:
+
    - Store API keys in secure storage (Keychain/Keystore)
    - Don't log sensitive information
    - Clear cache on app uninstall
@@ -585,16 +642,19 @@ const spacing = {
 ### Backend Security
 
 1. **API Security**:
+
    - Rate limiting (100 requests/minute per IP)
    - CORS configuration (whitelist mobile app)
    - Request size limits (10MB max)
 
 2. **YouTube API**:
+
    - Store API key in environment variables
    - Rotate keys periodically
    - Monitor quota usage
 
 3. **yt-dlp Security**:
+
    - Validate YouTube URLs
    - Sanitize command arguments
    - Run in isolated environment (container)
@@ -610,17 +670,20 @@ const spacing = {
 ### Mobile App Deployment
 
 **Build Configuration**:
+
 - Development: Debug builds with dev API endpoint
 - Staging: Release builds with staging API endpoint
 - Production: Signed release builds with production API endpoint
 
 **Distribution**:
+
 - Android: Google Play Store (AAB format)
 - iOS: Apple App Store (IPA format)
 
 ### Backend Deployment
 
 **Infrastructure**:
+
 ```
 Load Balancer
     ↓
@@ -630,6 +693,7 @@ YouTube API / yt-dlp
 ```
 
 **Containerization**:
+
 ```dockerfile
 # Dockerfile for Go backend
 FROM golang:1.21-alpine AS builder
@@ -642,6 +706,7 @@ CMD ["/server"]
 ```
 
 **Environment Variables**:
+
 - `YOUTUBE_API_KEY`: YouTube Data API key
 - `PORT`: Server port (default: 8080)
 - `MAX_CONCURRENT_DOWNLOADS`: Concurrent download limit
@@ -649,6 +714,7 @@ CMD ["/server"]
 - `LOG_LEVEL`: Logging level
 
 **Scaling Strategy**:
+
 - Horizontal scaling for API servers
 - Shared cache (Redis) for search results
 - CDN for static assets (if any)
@@ -658,21 +724,25 @@ CMD ["/server"]
 ### Mobile App Dependencies
 
 **Core**:
+
 - react-native: ^0.72.0
 - react: ^18.2.0
 - react-navigation: ^6.0.0
 
 **UI**:
+
 - react-native-reanimated: ^3.0.0 (animations)
 - lottie-react-native: ^6.0.0 (loading animations)
 - react-native-fast-image: ^8.6.0 (image caching)
 
 **Utilities**:
+
 - axios: ^1.4.0 (HTTP client)
 - react-native-fs: ^2.20.0 (file system)
 - @react-native-async-storage/async-storage: ^1.19.0 (storage)
 
 **Development**:
+
 - typescript: ^5.0.0
 - @types/react: ^18.2.0
 - jest: ^29.0.0
@@ -681,19 +751,23 @@ CMD ["/server"]
 ### Backend Dependencies
 
 **Core**:
+
 - github.com/gin-gonic/gin: HTTP framework
 - google.golang.org/api/youtube/v3: YouTube API client
 
 **Utilities**:
+
 - github.com/joho/godotenv: Environment variables
 - github.com/sirupsen/logrus: Logging
 - github.com/go-redis/redis/v8: Caching (optional)
 
 **Testing**:
+
 - github.com/stretchr/testify: Testing utilities
 - github.com/golang/mock: Mocking
 
 **External**:
+
 - yt-dlp: Video download tool (system dependency)
 - ffmpeg: Video processing (system dependency)
 

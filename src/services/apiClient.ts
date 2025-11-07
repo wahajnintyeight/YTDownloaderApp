@@ -7,6 +7,8 @@ import {
 } from '../types/video';
 import { mockSearchVideos } from './mockData';
 import { API_BASE_URL } from '../config/env';
+import { clientDownloadQueue } from './download/queueManager';
+import type { DownloadJob } from './download/queue';
 
 // API endpoint
 const BASE_URL = `${API_BASE_URL}/v2/api`;
@@ -183,22 +185,24 @@ class ApiClient {
       localDownloadId?: string;
     },
   ): Promise<string> {
-    // Import dynamically to avoid circular dependencies
-    const { downloadService } = await import('./downloadService');
+    const id = options?.localDownloadId || `${Date.now()}`;
+    const job: DownloadJob = {
+      id,
+      videoId,
+      format,
+      bitRate: options?.bitRate,
+      quality: options?.quality,
+      videoTitle,
+      status: 'queued',
+      progress: 0,
+      createdAt: Date.now(),
+    };
 
-    return downloadService.downloadVideo(
-      {
-        videoId,
-        format,
-        videoTitle: videoTitle,
-        bitRate: options?.bitRate,
-        quality: options?.quality,
-      },
-      options?.onProgress,
-      options?.onComplete,
-      options?.onError,
-      options?.localDownloadId,
-    );
+    return clientDownloadQueue.enqueueWithCallbacks(job, {
+      onProgress: options?.onProgress,
+      onComplete: options?.onComplete,
+      onError: options?.onError,
+    });
   }
 }
 

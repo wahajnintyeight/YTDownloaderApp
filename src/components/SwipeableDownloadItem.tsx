@@ -19,6 +19,8 @@ interface SwipeableDownloadItemProps {
   item: Download;
   onCancel: (id: string) => void;
   onDelete: (id: string) => void;
+  onMenuPress?: (item: Download, position: { x: number; y: number }) => void;
+  onPress?: (item: Download) => void;
   statusColor: string;
   statusText: string;
   theme: any;
@@ -29,6 +31,8 @@ const SwipeableDownloadItem: React.FC<SwipeableDownloadItemProps> = ({
   item,
   onCancel,
   onDelete,
+  onMenuPress,
+  onPress,
   statusColor,
   statusText,
   theme,
@@ -36,6 +40,7 @@ const SwipeableDownloadItem: React.FC<SwipeableDownloadItemProps> = ({
 }) => {
   const swipeableRef = useRef<Swipeable>(null);
   const scaleValue = useRef(new Animated.Value(1)).current;
+  const menuButtonRef = useRef<TouchableOpacity>(null);
 
   const handlePressIn = () => {
     Animated.spring(scaleValue, {
@@ -87,7 +92,10 @@ const SwipeableDownloadItem: React.FC<SwipeableDownloadItemProps> = ({
         ]}
       >
         <TouchableOpacity
-          style={[localStyles.deleteButton, { backgroundColor: theme.colors.error }]}
+          style={[
+            localStyles.deleteButton,
+            { backgroundColor: theme.colors.error },
+          ]}
           onPress={handleDelete}
           activeOpacity={0.8}
         >
@@ -124,6 +132,9 @@ const SwipeableDownloadItem: React.FC<SwipeableDownloadItemProps> = ({
           activeOpacity={0.7}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
+          onPress={() => onPress?.(item)}
+          onLongPress={() => onLongPress?.(item)}
+          delayLongPress={500}
           style={[s.downloadItem, { backgroundColor: theme.colors.surface }]}
         >
           <View style={s.cardContent}>
@@ -157,11 +168,50 @@ const SwipeableDownloadItem: React.FC<SwipeableDownloadItemProps> = ({
                 {statusText}
               </Text>
             </View>
+
+            <TouchableOpacity
+              ref={menuButtonRef}
+              style={localStyles.menuButton}
+              onPress={e => {
+                e.stopPropagation();
+                menuButtonRef.current?.measure(
+                  (x, y, width, height, pageX, pageY) => {
+                    onMenuPress?.(item, { x: pageX, y: pageY + height });
+                  },
+                );
+              }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <View style={localStyles.menuDots}>
+                <View
+                  style={[
+                    localStyles.dot,
+                    { backgroundColor: theme.colors.textSecondary },
+                  ]}
+                />
+                <View
+                  style={[
+                    localStyles.dot,
+                    { backgroundColor: theme.colors.textSecondary },
+                  ]}
+                />
+                <View
+                  style={[
+                    localStyles.dot,
+                    { backgroundColor: theme.colors.textSecondary },
+                  ]}
+                />
+              </View>
+            </TouchableOpacity>
           </View>
 
           {item.status === 'downloading' && (
             <View style={s.progressSection}>
-              <DownloadProgress progress={item.progress} visible={true} />
+              <DownloadProgress
+                progress={item.progress}
+                visible={true}
+                showPercentage={true}
+              />
             </View>
           )}
 
@@ -171,7 +221,9 @@ const SwipeableDownloadItem: React.FC<SwipeableDownloadItemProps> = ({
                 style={[s.cancelButton, { borderColor: theme.colors.error }]}
                 onPress={() => onCancel(item.id)}
               >
-                <Text style={[s.cancelButtonText, { color: theme.colors.error }]}>
+                <Text
+                  style={[s.cancelButtonText, { color: theme.colors.error }]}
+                >
                   Cancel
                 </Text>
               </TouchableOpacity>
@@ -227,22 +279,33 @@ const localStyles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  menuButton: {
+    padding: 8,
+    marginLeft: 4,
+  },
+  menuDots: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 3,
+  },
+  dot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+  },
 });
 
-export default React.memo(
-  SwipeableDownloadItem,
-  (prev, next) => {
-    // Avoid re-render unless key fields change or progress integer changes
-    const prevP = Math.round(prev.item.progress);
-    const nextP = Math.round(next.item.progress);
-    return (
-      prev.item.id === next.item.id &&
-      prev.item.status === next.item.status &&
-      prevP === nextP &&
-      prev.item.filePath === next.item.filePath &&
-      prev.item.error === next.item.error &&
-      prev.statusColor === next.statusColor &&
-      prev.statusText === next.statusText
-    );
-  },
-);
+export default React.memo(SwipeableDownloadItem, (prev, next) => {
+  // Avoid re-render unless key fields change or progress integer changes
+  const prevP = Math.round(prev.item.progress);
+  const nextP = Math.round(next.item.progress);
+  return (
+    prev.item.id === next.item.id &&
+    prev.item.status === next.item.status &&
+    prevP === nextP &&
+    prev.item.filePath === next.item.filePath &&
+    prev.item.error === next.item.error &&
+    prev.statusColor === next.statusColor &&
+    prev.statusText === next.statusText
+  );
+});

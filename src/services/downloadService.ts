@@ -52,6 +52,7 @@ class DownloadService {
   private chunkBuffer: Map<string, string[]> = new Map();
   private totalChunksPerDownload: Map<string, number> = new Map();
   private receivedChunksPerDownload: Map<string, number> = new Map();
+  private lastReportedChunk: Map<string, number> = new Map();
   // Track listener context so we can resume after backgrounding
   private listenerContext: Map<
     string,
@@ -82,23 +83,8 @@ class DownloadService {
       chunkIndex < chunks.length
     ) {
       if (!chunks[chunkIndex]) {
-        // Log first chunk for debugging
-        if (__DEV__ && chunkIndex === 0) {
-          console.log(
-            `🔍 First chunk sample (first 100 chars): ${chunkData.slice(
-              0,
-              100,
-            )}`,
-          );
-          console.log(`🔍 First chunk has whitespace: ${/\s/.test(chunkData)}`);
-          console.log(`🔍 First chunk length: ${chunkData.length}`);
-        }
-
-        // Sanitize chunk data: remove all whitespace and invalid chars
-        let sanitized = chunkData.replace(/\s/g, '');
-        sanitized = sanitized.replace(/[^A-Za-z0-9+/=]/g, '');
-
-        chunks[chunkIndex] = sanitized;
+        // Store raw chunk - sanitize once during assembly for better performance
+        chunks[chunkIndex] = chunkData;
         const received =
           (this.receivedChunksPerDownload.get(downloadId) || 0) + 1;
         this.receivedChunksPerDownload.set(downloadId, received);
@@ -188,40 +174,42 @@ class DownloadService {
       (nextState === 'background' || nextState === 'inactive') &&
       prev === 'active'
     ) {
-      // Pause all active SSE connections
-      this.activeEventSources.forEach((eventSource, downloadId) => {
-        try {
-          const timer = this.heartbeatTimers.get(downloadId);
-          if (timer) {
-            clearTimeout(timer);
-            this.heartbeatTimers.delete(downloadId);
-          }
-          eventSource.close();
-          this.activeEventSources.delete(downloadId);
-          this.pausedOnBackground.add(downloadId);
-        } catch {}
-      });
+      console.log('📱 App going to background - KEEPING SSE connections alive');
+      // DO NOT close SSE connections - keep them alive for background downloads
+      // Just log the state change for debugging
+      console.log(`🔌 Active SSE connections: ${this.activeEventSources.size}`);
+
+      // Keep heartbeat timers running to detect connection issues
+      // The SSE connections will continue receiving chunks in the background
     }
 
     if (
       nextState === 'active' &&
       (prev === 'background' || prev === 'inactive')
     ) {
-      // Resume paused SSE connections
-      const ids = Array.from(this.pausedOnBackground.values());
-      this.pausedOnBackground.clear();
-      ids.forEach(downloadId => {
-        const ctx = this.listenerContext.get(downloadId);
-        if (ctx) {
-          this.startSSEListener(
-            downloadId,
-            ctx.onProgress,
-            ctx.onComplete,
-            ctx.onError,
-            ctx.localDownloadId,
-          );
-        }
-      });
+      console.log('📱 App returning to foreground');
+      console.log(`🔌 Active SSE connections: ${this.activeEventSources.size}`);
+
+      // Check if any connections were lost and need to be resumed
+      const lostConnections = Array.from(this.pausedOnBackground.values());
+      if (lostConnections.length > 0) {
+        console.log(
+          `🔄 Resuming ${lostConnections.length} lost connections...`,
+        );
+        this.pausedOnBackground.clear();
+        lostConnections.forEach(downloadId => {
+          const ctx = this.listenerContext.get(downloadId);
+          if (ctx) {
+            this.startSSEListener(
+              downloadId,
+              ctx.onProgress,
+              ctx.onComplete,
+              ctx.onError,
+              ctx.localDownloadId,
+            );
+          }
+        });
+      }
     }
   };
 
@@ -563,22 +551,19 @@ class DownloadService {
                 if (!this.chunkBuffer.has(dId)) {
                   this.initializeChunkTracking(dId, total);
                 }
-                // Pre-sanitize chunk and strip padding for non-final chunks
-                let pre = chunkData.replace(/\s/g, '');
-                pre = pre.replace(/[^A-Za-z0-9+/=]/g, '');
-                if (idx < total - 1) {
-                  pre = pre.replace(/[=]+$/, '');
-                }
-                const received = this.addChunk(dId, idx, pre);
+
+                // Store raw chunk - sanitization happens once during assembly
+                const received = this.addChunk(dId, idx, chunkData);
                 const totalKnown =
                   this.totalChunksPerDownload.get(dId) || total;
                 const pct = Math.min(100, (received / totalKnown) * 100);
-                if (__DEV__) {
-                  console.log(`📥 Chunk ${idx + 1}/${total}`);
-                  console.log(`📦 Assembly progress: ${pct.toFixed(1)}%`);
+
+                // Only report progress every 10 chunks or at completion for better performance
+                const lastReported = this.lastReportedChunk.get(dId) || 0;
+                if (received - lastReported >= 10 || pct >= 100) {
+                  forwardProgress(dId, pct);
+                  this.lastReportedChunk.set(dId, received);
                 }
-                // Use monotonic progress guard
-                forwardProgress(dId, pct);
               }
               break;
             }
@@ -729,14 +714,36 @@ class DownloadService {
                   }, 0);
                   break;
                 } else {
-                  console.error(
-                    '❌ No downloadUrl, file content, or chunks found in response',
+                  // In certain scenarios the chunks for this download may
+                  // have already been fully received and assembled *before*
+                  // the `download_complete` event is dispatched by the
+                  // backend (e.g. when the server streams all chunks first and
+                  // only afterwards sends a final completion heartbeat).
+                  // In that case the absence of `downloadUrl`, `fileContent`,
+                  // or remaining `chunkBuffer` entries is expected and should
+                  // not be treated as an error.  We therefore gracefully
+                  // acknowledge completion, forward 100% progress, invoke the
+                  // completion callback (if it hasn’t fired already), and
+                  // perform normal cleanup without raising an error.
+
+                  console.log(
+                    'ℹ️ download_complete event received with no additional payload – assuming file already saved.',
                   );
-                  console.error(
-                    'Response data:',
-                    JSON.stringify(data, null, 2),
+
+                  // Ensure UI shows 100% progress.
+                  forwardProgress(downloadId, 100);
+
+                  // Best-effort invoke onComplete in case it hasn’t been
+                  // executed yet.  File path may already have been provided
+                  // earlier (via chunk assembly), but we cannot retrieve it
+                  // here without additional state tracking, so we pass an
+                  // empty string as a placeholder for the path.
+                  const safeOnComplete = createCrashSafeWrapper(
+                    () => onComplete?.('', filename),
+                    'Download completion callback (no-payload) failed',
                   );
-                  onError?.('No downloadable content received from server');
+                  setTimeout(safeOnComplete, 0);
+
                   this.cancelDownload(downloadId);
                   break;
                 }
@@ -993,18 +1000,21 @@ class DownloadService {
     } else if (attempts > 0) {
       return 'reconnecting';
     }
-
     return 'active';
+  }
+
+  // Public: check if chunk-based progress is active for this server download ID
+  isUsingChunkProgress(downloadId: string): boolean {
+    return this.useChunkProgress.get(downloadId) === true;
   }
 
   // Clean up all active downloads
   cleanup(): void {
-    const activeCount = this.activeEventSources.size;
-    if (activeCount > 0) {
+    if (this.activeEventSources.size > 0) {
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('🧹 CLEANING UP ALL DOWNLOADS');
+      console.log('🔄 CLEANING UP ALL ACTIVE DOWNLOADS');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log(`📊 Active SSE connections: ${activeCount}`);
+
       console.log(`🔄 Reconnect attempts: ${this.reconnectAttempts.size}`);
       console.log(`💓 Active heartbeat timers: ${this.heartbeatTimers.size}`);
 

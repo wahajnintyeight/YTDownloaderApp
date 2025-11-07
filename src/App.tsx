@@ -20,7 +20,10 @@ const App: React.FC = () => {
     console.log('✅ App mounted successfully');
 
     // Handle app state changes
-    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    const subscription = AppState.addEventListener(
+      'change',
+      handleAppStateChange,
+    );
 
     return () => {
       console.log('👋 App unmounting');

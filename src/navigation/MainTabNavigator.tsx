@@ -14,31 +14,41 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
  * Main Tab Navigator
  * DRY principle: Centralized navigation configuration
  */
-const TabIcon: React.FC<{ name: keyof MainTabParamList; focused: boolean; color: string }> = ({ name, focused, color }) => {
+const TabIcon: React.FC<{
+  name: keyof MainTabParamList;
+  focused: boolean;
+  color: string;
+}> = ({ name, focused, color }) => {
   const iconSize = 22;
   const strokeWidth = focused ? 2.5 : 2;
   const renderIcon = () => {
     switch (name) {
       case 'Browse':
-        return <SearchIcon size={iconSize} color={color} strokeWidth={strokeWidth} />;
+        return (
+          <SearchIcon size={iconSize} color={color} strokeWidth={strokeWidth} />
+        );
       case 'Downloads':
-        return <DownloadIcon size={iconSize} color={color} strokeWidth={strokeWidth} />;
+        return (
+          <DownloadIcon
+            size={iconSize}
+            color={color}
+            strokeWidth={strokeWidth}
+          />
+        );
       default:
         return null;
     }
   };
-  return (
-    <View style={styles.iconWrapper}>
-      {renderIcon()}
-    </View>
-  );
+  return <View style={styles.iconWrapper}>{renderIcon()}</View>;
 };
 
 export const MainTabNavigator: React.FC = () => {
   const { theme, isDark } = useTheme();
   const { downloads } = useDownloads();
 
-  const activeDownloads = downloads.filter(d => d.status === 'downloading' || d.status === 'pending').length;
+  const activeDownloads = downloads.filter(
+    d => d.status === 'downloading' || d.status === 'pending',
+  ).length;
 
   return (
     <Tab.Navigator
@@ -79,13 +89,15 @@ export const MainTabNavigator: React.FC = () => {
           tabBarLabel: 'Downloads',
           tabBarBadge: activeDownloads > 0 ? activeDownloads : undefined,
           tabBarBadgeStyle: {
-            backgroundColor: isDark ? 'white' : '#4ECDC4',
-            color: isDark ? '#FFFFFF' : '#4ECDC4',
+            backgroundColor: isDark
+              ? theme.colors.error
+              : theme.colors.secondary,
+            color: '#FFFFFF',
             fontSize: 10,
             fontWeight: '600',
-            // Subtle border in dark mode to enhance legibility
-            borderWidth: isDark ? 1 : 0,
-            borderColor: isDark ? theme.colors.textSecondary : 'transparent',
+            minWidth: 20,
+            height: 20,
+            borderRadius: 10,
           },
         }}
       />

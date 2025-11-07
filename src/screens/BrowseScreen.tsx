@@ -4,12 +4,10 @@ import {
   Text,
   StyleSheet,
   FlatList,
-  StatusBar,
   RefreshControl,
   ListRenderItem,
   TouchableOpacity,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Video } from '../types/video';
 import { useTheme } from '../hooks/useTheme';
 import { useSearch } from '../hooks/useSearch';
@@ -21,10 +19,9 @@ import DownloadDrawer from '../components/DownloadDrawer';
 import AppHeader from '../components/AppHeader';
 
 const BrowseScreen: React.FC = () => {
-  const { theme, isDark } = useTheme();
-  const { results, loading, error, hasMore, search, loadMore, clearResults } =
-    useSearch();
-  const { showAlert, showSuccess, showError, showConfirm } = useDialog();
+  const { theme } = useTheme();
+  const { results, loading, error, hasMore, search, loadMore } = useSearch();
+  const { showSuccess } = useDialog();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
   const [modalVisible, setModalVisible] = useState(false);

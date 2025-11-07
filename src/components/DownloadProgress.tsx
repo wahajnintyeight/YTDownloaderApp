@@ -18,10 +18,12 @@ const DownloadProgress: React.FC<DownloadProgressProps> = ({
   const animatedProgress = useSharedValue(0);
 
   useEffect(() => {
+    // Use simpler animation for better performance
     animatedProgress.value = withSpring(Math.max(0, Math.min(100, progress)), {
-      damping: 10,
-      mass: 1,
-      overshootClamping: false,
+      damping: 20,
+      mass: 0.5,
+      stiffness: 100,
+      overshootClamping: true,
     });
   }, [progress, animatedProgress]);
 

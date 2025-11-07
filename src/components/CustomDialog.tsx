@@ -16,6 +16,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTheme } from '../hooks/useTheme';
 import { DialogConfig, DialogType } from '../types/dialog';
+import {
+  moderateScale as ms,
+  scale,
+  verticalScale as vs,
+} from '../utils/responsive';
 
 interface CustomDialogProps {
   visible: boolean;
@@ -23,9 +28,27 @@ interface CustomDialogProps {
   onDismiss: () => void;
 }
 
-const { width: screenWidth } = Dimensions.get('window');
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-const CustomDialog: React.FC<CustomDialogProps> = ({ visible, config, onDismiss }) => {
+// Calculate responsive dialog width
+// For small screens (< 360px): 90% of screen width
+// For medium screens (360-600px): 85% of screen width, max 340px
+// For large screens (> 600px): max 400px
+const getDialogWidth = () => {
+  if (screenWidth < 360) {
+    return screenWidth * 0.9;
+  } else if (screenWidth < 600) {
+    return Math.min(screenWidth * 0.85, 340);
+  } else {
+    return Math.min(screenWidth * 0.7, 400);
+  }
+};
+
+const CustomDialog: React.FC<CustomDialogProps> = ({
+  visible,
+  config,
+  onDismiss,
+}) => {
   const { theme } = useTheme();
   const backdropOpacity = useSharedValue(0);
   const contentScale = useSharedValue(0.8);
@@ -100,6 +123,11 @@ const CustomDialog: React.FC<CustomDialogProps> = ({ visible, config, onDismiss 
   const dialogColor = getDialogColor(config.type || 'info');
   const dialogIcon = getDialogIcon(config.type || 'info');
 
+  const dialogWidth = getDialogWidth();
+  
+  // Determine if buttons should stack vertically (for 3+ buttons or small screens)
+  const shouldStackButtons = buttons.length > 2 || screenWidth < 360;
+
   const styles = StyleSheet.create({
     modalContainer: {
       flex: 1,
@@ -112,71 +140,74 @@ const CustomDialog: React.FC<CustomDialogProps> = ({ visible, config, onDismiss 
     },
     dialogContainer: {
       backgroundColor: theme.colors.surface,
-      borderRadius: 16,
+      borderRadius: ms(16),
       padding: 0,
-      width: screenWidth - 48,
-      maxWidth: 320,
+      width: dialogWidth,
+      maxHeight: screenHeight * 0.8, // Prevent dialog from being too tall
       shadowColor: '#000',
       shadowOffset: {
         width: 0,
-        height: 8,
+        height: vs(8),
       },
       shadowOpacity: 0.25,
-      shadowRadius: 16,
+      shadowRadius: ms(16),
       elevation: 16,
     },
     header: {
       alignItems: 'center',
-      paddingTop: 24,
-      paddingHorizontal: 24,
-      paddingBottom: 16,
+      paddingTop: vs(20),
+      paddingHorizontal: scale(20),
+      paddingBottom: vs(12),
     },
     iconContainer: {
-      width: 48,
-      height: 48,
-      borderRadius: 24,
+      width: ms(44),
+      height: ms(44),
+      borderRadius: ms(22),
       backgroundColor: dialogColor + '20',
       justifyContent: 'center',
       alignItems: 'center',
-      marginBottom: 16,
+      marginBottom: vs(12),
     },
     icon: {
-      fontSize: 24,
+      fontSize: ms(22),
       color: dialogColor,
       fontWeight: 'bold',
     },
     title: {
-      fontSize: 18,
+      fontSize: ms(17),
       fontWeight: '600',
       color: theme.colors.text,
       textAlign: 'center',
-      marginBottom: 8,
+      marginBottom: vs(6),
     },
     message: {
-      fontSize: 16,
+      fontSize: ms(14),
       color: theme.colors.textSecondary,
       textAlign: 'center',
-      lineHeight: 24,
-      paddingHorizontal: 24,
-      paddingBottom: 24,
+      lineHeight: ms(20),
+      paddingHorizontal: scale(20),
+      paddingBottom: vs(20),
     },
     buttonsContainer: {
-      flexDirection: 'row',
+      flexDirection: shouldStackButtons ? 'column' : 'row',
       borderTopWidth: 1,
       borderTopColor: theme.colors.border,
     },
     button: {
-      flex: 1,
-      paddingVertical: 16,
+      flex: shouldStackButtons ? 0 : 1,
+      paddingVertical: vs(14),
+      paddingHorizontal: scale(16),
       justifyContent: 'center',
       alignItems: 'center',
+      minHeight: vs(48), // Ensure touch target is large enough
     },
     buttonSeparator: {
-      width: 1,
+      width: shouldStackButtons ? 0 : 1,
+      height: shouldStackButtons ? 1 : 0,
       backgroundColor: theme.colors.border,
     },
     buttonText: {
-      fontSize: 16,
+      fontSize: ms(15),
       fontWeight: '600',
     },
     defaultButtonText: {
@@ -239,7 +270,8 @@ const CustomDialog: React.FC<CustomDialogProps> = ({ visible, config, onDismiss 
                     style={[
                       styles.buttonText,
                       button.style === 'cancel' && styles.cancelButtonText,
-                      button.style === 'destructive' && styles.destructiveButtonText,
+                      button.style === 'destructive' &&
+                        styles.destructiveButtonText,
                       button.style === 'default' && styles.defaultButtonText,
                     ]}
                   >

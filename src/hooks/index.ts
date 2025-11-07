@@ -4,3 +4,4 @@
  */
 
 export { useDownloadManager } from './useDownloadManager';
+export { useDownloadQueue } from './useDownloadQueue';

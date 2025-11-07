@@ -2,10 +2,9 @@ import React, { useMemo, useCallback } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   StatusBar,
   TouchableOpacity,
-  FlatList,
+  SectionList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -14,18 +13,75 @@ import { useTheme } from '../hooks/useTheme';
 import { useDownloads } from '../hooks/useDownloads';
 import { Download, DownloadStatus } from '../types/video';
 import SwipeableDownloadItem from '../components/SwipeableDownloadItem';
+import DownloadItemMenu from '../components/DownloadItemMenu';
+import LottieAnimation from '../components/LottieAnimation';
 import { useDialog } from '../hooks/useDialog';
 import { SettingsIcon } from '../components/icons/ModernIcons';
+import { useEffect, useRef, useState } from 'react';
+import { getDownloadsScreenStyles } from './DownloadsScreen.styles';
+import { openFile, openDirectory } from '../utils/openFile';
 
 // Removed DownloadItem component - now using SwipeableDownloadItem
 
 const DownloadsScreen: React.FC = () => {
   const { theme, isDark } = useTheme();
   const navigation = useNavigation();
-  const { downloads, cancelDownload, deleteDownload, forceCleanupAllDownloads } =
-    useDownloads();
+  const {
+    downloads,
+    cancelDownload,
+    deleteDownload,
+    retryDownloadByVideoId,
+    forceCleanupAllDownloads,
+  } = useDownloads();
   const { showDialog } = useDialog();
-  // removed unused navigation
+
+  // Menu state
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
+  const [selectedItem, setSelectedItem] = useState<Download | null>(null);
+
+  // Filter downloads by status
+  const activeDownloadsList = useMemo(
+    () => downloads.filter(d => d.status === 'downloading'),
+    [downloads],
+  );
+
+  const queuedDownloadsList = useMemo(
+    () => downloads.filter(d => d.status === 'pending'),
+    [downloads],
+  );
+
+  const completedDownloadsList = useMemo(
+    () =>
+      downloads.filter(d =>
+        ['completed', 'failed', 'cancelled'].includes(d.status),
+      ),
+    [downloads],
+  );
+
+  // Log when screen mounts and when downloads data changes
+  useEffect(() => {
+    console.log('📱 [DOWNLOADS SCREEN] Screen mounted/updated');
+    console.log(`📊 [DOWNLOADS SCREEN] Total downloads: ${downloads.length}`);
+    console.log(`📋 [DOWNLOADS SCREEN] Download breakdown:`, {
+      active: activeDownloadsList.length,
+      queued: queuedDownloadsList.length,
+      completed: completedDownloadsList.length,
+    });
+    if (downloads.length > 0) {
+      console.log(
+        `📝 [DOWNLOADS SCREEN] Download list:`,
+        downloads
+          .map(d => `${d.id} - ${d.video.title} (${d.status})`)
+          .join('\n  '),
+      );
+    }
+  }, [
+    downloads,
+    activeDownloadsList,
+    queuedDownloadsList,
+    completedDownloadsList,
+  ]);
 
   const handleForceCleanup = () => {
     showDialog({
@@ -54,26 +110,61 @@ const DownloadsScreen: React.FC = () => {
     });
   };
 
-  const activeDownloads = downloads.filter(
-    d => d.status === 'pending' || d.status === 'downloading',
-  ).length;
+  // Build sections for SectionList
+  const sections = useMemo(() => {
+    const result = [];
 
-  const getStatusColor = useCallback((status: DownloadStatus): string => {
-    switch (status) {
-      case 'downloading':
-        return theme.colors.primary;
-      case 'completed':
-        return theme.colors.success;
-      case 'failed':
-        return theme.colors.error;
-      case 'cancelled':
-        return theme.colors.textSecondary;
-      case 'pending':
-        return theme.colors.textSecondary;
-      default:
-        return theme.colors.textSecondary;
+    if (activeDownloadsList.length > 0) {
+      result.push({
+        title: 'Active Downloads',
+        data: activeDownloadsList,
+      });
     }
-  }, [theme.colors.primary, theme.colors.success, theme.colors.error, theme.colors.textSecondary]);
+
+    if (queuedDownloadsList.length > 0) {
+      result.push({
+        title: `Queue (${queuedDownloadsList.length})`,
+        data: queuedDownloadsList,
+      });
+    }
+
+    if (completedDownloadsList.length > 0) {
+      result.push({
+        title: 'Completed',
+        data: completedDownloadsList,
+      });
+    }
+
+    return result;
+  }, [activeDownloadsList, queuedDownloadsList, completedDownloadsList]);
+
+  const totalActiveDownloads =
+    activeDownloadsList.length + queuedDownloadsList.length;
+
+  const getStatusColor = useCallback(
+    (status: DownloadStatus): string => {
+      switch (status) {
+        case 'downloading':
+          return theme.colors.primary;
+        case 'completed':
+          return theme.colors.success;
+        case 'failed':
+          return theme.colors.error;
+        case 'cancelled':
+          return theme.colors.textSecondary;
+        case 'pending':
+          return theme.colors.textSecondary;
+        default:
+          return theme.colors.textSecondary;
+      }
+    },
+    [
+      theme.colors.primary,
+      theme.colors.success,
+      theme.colors.error,
+      theme.colors.textSecondary,
+    ],
+  );
 
   const getStatusText = useCallback((status: DownloadStatus): string => {
     switch (status) {
@@ -92,158 +183,113 @@ const DownloadsScreen: React.FC = () => {
     }
   }, []);
 
-  const styles = useMemo(() => StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: theme.colors.background,
+  const styles = useMemo(() => getDownloadsScreenStyles(theme), [theme]);
+
+  const handlePress = useCallback(
+    (item: Download) => {
+      if (item.status === 'completed' && item.filePath) {
+        openFile(item.filePath).catch(() => {
+          showDialog({
+            type: 'error',
+            title: 'Open Failed',
+            message:
+              'Could not open the file. It may have been moved or deleted.',
+            buttons: [{ text: 'OK', style: 'default', onPress: () => {} }],
+            dismissible: true,
+          });
+        });
+      }
     },
-    header: {
-      paddingHorizontal: theme.spacing.lg,
-      paddingVertical: theme.spacing.md,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border,
+    [showDialog],
+  );
+
+  const handleOpenDirectory = useCallback(
+    async (filePath: string) => {
+      try {
+        // Extract directory path from file path
+        const directory = filePath.substring(0, filePath.lastIndexOf('/'));
+
+        // Open directory using the utility function
+        await openDirectory(directory);
+      } catch (error) {
+        console.error('Failed to open directory:', error);
+        showDialog({
+          type: 'error',
+          title: 'Error',
+          message:
+            'Failed to open directory. The folder may have been moved or deleted.',
+          buttons: [{ text: 'OK', style: 'default', onPress: () => {} }],
+          dismissible: true,
+        });
+      }
     },
-    headerTop: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
+    [showDialog],
+  );
+
+  const handleMenuPress = useCallback(
+    (item: Download, position: { x: number; y: number }) => {
+      setSelectedItem(item);
+      setMenuPosition(position);
+      setMenuVisible(true);
     },
-    headerInfo: {
-      flex: 1,
-    },
-    headerTitle: {
-      fontSize: 28,
-      fontWeight: '700',
-      color: theme.colors.text,
-    },
-    headerSubtitle: {
-      fontSize: 13,
-      color: theme.colors.textSecondary,
-      marginTop: theme.spacing.xs,
-    },
-    cleanupButton: {
-      borderWidth: 1,
-      borderRadius: 6,
-      paddingHorizontal: theme.spacing.md,
-      paddingVertical: theme.spacing.sm,
-    },
-    cleanupButtonText: {
-      fontSize: 12,
-      fontWeight: '600',
-    },
-    listContainer: {
-      flex: 1,
-    },
-    downloadItem: {
-      marginHorizontal: theme.spacing.md,
-      marginVertical: theme.spacing.xs,
-      borderRadius: 10,
-      overflow: 'hidden',
-      elevation: 1,
-      shadowColor: '#000',
-      shadowOffset: {
-        width: 0,
-        height: 0.5,
-      },
-      shadowOpacity: 0.1,
-      shadowRadius: 1.5,
-    },
-    cardContent: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      padding: theme.spacing.sm,
-      gap: theme.spacing.sm,
-    },
-    thumbnail: {
-      width: 56,
-      height: 32,
-      borderRadius: 4,
-      backgroundColor: theme.colors.border,
-    },
-    infoContainer: {
-      flex: 1,
-      justifyContent: 'center',
-    },
-    videoTitle: {
-      fontSize: 14,
-      fontWeight: '600',
-      lineHeight: 18,
-      marginBottom: 2,
-    },
-    metaRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    metaText: {
-      fontSize: 11,
-      fontWeight: '500',
-    },
-    statusContainer: {
-      alignItems: 'center',
-      gap: 4,
-    },
-    statusDot: {
-      width: 8,
-      height: 8,
-      borderRadius: 4,
-    },
-    statusLabel: {
-      fontSize: 10,
-      fontWeight: '600',
-    },
-    progressSection: {
-      paddingHorizontal: theme.spacing.sm,
-      paddingBottom: theme.spacing.sm,
-    },
-    actionRow: {
-      flexDirection: 'row',
-      paddingHorizontal: theme.spacing.sm,
-      paddingBottom: theme.spacing.sm,
-      gap: theme.spacing.xs,
-    },
-    cancelButton: {
-      flex: 1,
-      borderWidth: 1,
-      borderRadius: 4,
-      paddingVertical: 6,
-      alignItems: 'center',
-    },
-    cancelButtonText: {
-      fontSize: 11,
-      fontWeight: '600',
-    },
-    messageContainer: {
-      marginHorizontal: theme.spacing.sm,
-      marginBottom: theme.spacing.sm,
-      paddingHorizontal: theme.spacing.sm,
-      paddingVertical: 6,
-      borderRadius: 4,
-    },
-    messageText: {
-      fontSize: 11,
-      fontWeight: '500',
-    },
-    emptyContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingHorizontal: theme.spacing.xl,
-    },
-    emptyTitle: {
-      fontSize: 20,
-      fontWeight: '600',
-      textAlign: 'center',
-      marginBottom: theme.spacing.sm,
-    },
-    emptySubtitle: {
-      fontSize: 16,
-      textAlign: 'center',
-      lineHeight: 24,
-    },
-    listContent: {
-      paddingVertical: theme.spacing.xs,
-    },
-  }), [theme]);
+    [],
+  );
+
+  const handleRetry = useCallback(async () => {
+    if (!selectedItem) return;
+
+    try {
+      await retryDownloadByVideoId(selectedItem.video.id);
+      showDialog({
+        type: 'success',
+        title: 'Download Restarted',
+        message:
+          'The download has been restarted. Previous entries have been removed.',
+        buttons: [{ text: 'OK', style: 'default', onPress: () => {} }],
+        dismissible: true,
+      });
+    } catch (error) {
+      console.error('Retry failed:', error);
+      showDialog({
+        type: 'error',
+        title: 'Retry Failed',
+        message: 'Failed to restart the download. Please try again.',
+        buttons: [{ text: 'OK', style: 'default', onPress: () => {} }],
+        dismissible: true,
+      });
+    }
+  }, [selectedItem, retryDownloadByVideoId, showDialog]);
+
+  const getMenuItems = useCallback(() => {
+    if (!selectedItem) return [];
+
+    const items = [];
+
+    // Add Retry option for failed downloads
+    if (selectedItem.status === 'failed') {
+      items.push({
+        label: 'Retry Download',
+        onPress: handleRetry,
+      });
+    }
+
+    // Add Open Directory option for completed downloads
+    if (selectedItem.status === 'completed' && selectedItem.filePath) {
+      items.push({
+        label: 'Open Directory',
+        onPress: () => handleOpenDirectory(selectedItem.filePath!),
+      });
+    }
+
+    // Always add Delete option
+    items.push({
+      label: 'Delete',
+      onPress: () => deleteDownload(selectedItem.id),
+      destructive: true,
+    });
+
+    return items;
+  }, [selectedItem, handleRetry, handleOpenDirectory, deleteDownload]);
 
   const renderDownloadItem = useCallback(
     ({ item }: { item: Download }) => {
@@ -254,6 +300,8 @@ const DownloadsScreen: React.FC = () => {
           item={item}
           onCancel={cancelDownload}
           onDelete={deleteDownload}
+          onMenuPress={handleMenuPress}
+          onPress={handlePress}
           statusColor={statusColor}
           statusText={statusText}
           theme={theme}
@@ -261,15 +309,56 @@ const DownloadsScreen: React.FC = () => {
         />
       );
     },
-    [cancelDownload, deleteDownload, theme, styles, getStatusColor, getStatusText],
+    [
+      cancelDownload,
+      deleteDownload,
+      handleMenuPress,
+      handlePress,
+      theme,
+      styles,
+      getStatusColor,
+      getStatusText,
+    ],
   );
 
   const keyExtractor = useCallback((item: Download) => item.id, []);
 
+  const renderSectionHeader = useCallback(
+    ({ section }: { section: { title: string } }) => (
+      <View
+        style={[
+          styles.sectionHeader,
+          { backgroundColor: theme.colors.background },
+        ]}
+      >
+        <Text
+          style={[
+            styles.sectionHeaderText,
+            { color: theme.colors.textSecondary },
+          ]}
+        >
+          {section.title}
+        </Text>
+      </View>
+    ),
+    [theme, styles],
+  );
+
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
-      <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>No Downloads Yet</Text>
-      <Text style={[styles.emptySubtitle, { color: theme.colors.textSecondary }]}>
+      <LottieAnimation 
+        type="empty" 
+        visible={true}
+        size={180}
+        loop={true}
+        autoPlay={true}
+      />
+      <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
+        No Downloads Yet
+      </Text>
+      <Text
+        style={[styles.emptySubtitle, { color: theme.colors.textSecondary }]}
+      >
         Start downloading videos to see them here
       </Text>
     </View>
@@ -284,54 +373,85 @@ const DownloadsScreen: React.FC = () => {
         />
 
         <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <View style={styles.headerInfo}>
-            <Text style={styles.headerTitle}>Downloads</Text>
-            <Text style={styles.headerSubtitle}>
-              {downloads.length} {downloads.length === 1 ? 'item' : 'items'}
-              {activeDownloads > 0 && ` • ${activeDownloads} active`}
-            </Text>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm }}>
-            {activeDownloads > 0 && (
-              <TouchableOpacity
-                style={[styles.cleanupButton, { borderColor: theme.colors.error }]}
-                onPress={handleForceCleanup}
-              >
-                <Text style={[styles.cleanupButtonText, { color: theme.colors.error }]}>Cleanup</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              accessibilityLabel="Open settings"
-              onPress={() => navigation.navigate('Settings' as never)}
-              style={{ paddingHorizontal: 8, paddingVertical: 6 }}
+          <View style={styles.headerTop}>
+            <View style={styles.headerInfo}>
+              <Text style={styles.headerTitle}>Downloads</Text>
+              <Text style={styles.headerSubtitle}>
+                {downloads.length} {downloads.length === 1 ? 'item' : 'items'}
+                {totalActiveDownloads > 0 &&
+                  ` • ${totalActiveDownloads} active`}
+              </Text>
+            </View>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: theme.spacing.sm,
+              }}
             >
-              <SettingsIcon size={20} color={theme.colors.text} strokeWidth={2} />
-            </TouchableOpacity>
+              {totalActiveDownloads > 0 && (
+                <TouchableOpacity
+                  style={[
+                    styles.cleanupButton,
+                    { borderColor: theme.colors.error },
+                  ]}
+                  onPress={handleForceCleanup}
+                >
+                  <Text
+                    style={[
+                      styles.cleanupButtonText,
+                      { color: theme.colors.error },
+                    ]}
+                  >
+                    Cleanup
+                  </Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                accessibilityLabel="Open settings"
+                onPress={() => navigation.navigate('Settings' as never)}
+                style={{ paddingHorizontal: 8, paddingVertical: 6 }}
+              >
+                <SettingsIcon
+                  size={20}
+                  color={theme.colors.text}
+                  strokeWidth={2}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
 
-      <View style={styles.listContainer}>
-        {downloads.length > 0 ? (
-          <FlatList
-            data={downloads}
-            renderItem={renderDownloadItem}
-            keyExtractor={keyExtractor}
-            extraData={downloads}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-            scrollEventThrottle={16}
-            initialNumToRender={8}
-            windowSize={10}
-            maxToRenderPerBatch={8}
-            updateCellsBatchingPeriod={50}
-            removeClippedSubviews
-          />
-        ) : (
-          renderEmptyState()
-        )}
-      </View>
+        <View style={styles.listContainer}>
+          {sections.length > 0 ? (
+            <SectionList
+              sections={sections}
+              renderItem={renderDownloadItem}
+              renderSectionHeader={renderSectionHeader}
+              keyExtractor={keyExtractor}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+              scrollEventThrottle={16}
+              initialNumToRender={5}
+              windowSize={5}
+              maxToRenderPerBatch={5}
+              updateCellsBatchingPeriod={200}
+              removeClippedSubviews
+              stickySectionHeadersEnabled={false}
+            />
+          ) : (
+            renderEmptyState()
+          )}
+        </View>
+
+        {/* Dropdown Menu */}
+        <DownloadItemMenu
+          visible={menuVisible}
+          items={getMenuItems()}
+          onClose={() => setMenuVisible(false)}
+          theme={theme}
+          position={menuPosition}
+        />
       </SafeAreaView>
     </GestureHandlerRootView>
   );

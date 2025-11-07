@@ -1,10 +1,6 @@
 import React, { useRef, useEffect } from 'react';
-import {
-  View,
-  Animated,
-  StyleSheet,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Animated, StyleSheet, ActivityIndicator } from 'react-native';
+import LottieView from 'lottie-react-native';
 import { useTheme } from '../hooks/useTheme';
 
 type AnimationType = 'search' | 'download' | 'general';
@@ -13,16 +9,19 @@ interface LoadingAnimationProps {
   type?: AnimationType;
   visible: boolean;
   size?: 'small' | 'large';
+  useLottie?: boolean;
 }
 
 const LoadingAnimation: React.FC<LoadingAnimationProps> = ({
   type = 'general',
   visible,
   size = 'large',
+  useLottie = true,
 }) => {
   const { theme } = useTheme();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
+  const lottieRef = useRef<LottieView>(null);
 
   useEffect(() => {
     if (visible) {
@@ -39,7 +38,7 @@ const LoadingAnimation: React.FC<LoadingAnimationProps> = ({
           toValue: 1,
           duration: 2000,
           useNativeDriver: true,
-        })
+        }),
       );
       rotateAnimation.start();
 
@@ -103,7 +102,7 @@ const LoadingAnimation: React.FC<LoadingAnimationProps> = ({
           },
         ]}
       />
-      
+
       {/* Fallback to ActivityIndicator for better compatibility */}
       {/* <ActivityIndicator
         size={size}
