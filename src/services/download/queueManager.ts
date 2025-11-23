@@ -1,6 +1,7 @@
 import { downloadService } from '../downloadService';
 import type { DownloadQueueState, DownloadJob } from './queue';
 import { storageService, PersistedDownloadQueue } from '../storageService';
+import { notificationService } from '../notificationService';
 
 export class ClientDownloadQueue {
   private activeDownload: DownloadJob | null = null;
@@ -114,6 +115,7 @@ export class ClientDownloadQueue {
   }
 
   private executeDownload(job: DownloadJob): Promise<void> {
+    console.log("JOB:", job)
     return new Promise((resolve, reject) => {
       const cb = this.callbacks.get(job.id);
       downloadService
@@ -127,16 +129,25 @@ export class ClientDownloadQueue {
           },
           (progress: number) => {
             job.progress = progress;
+            notificationService.showDownloadProgress(
+              job.id,
+              job.videoTitle,
+              progress,
+              'Downloading...',
+              () => this.cancelDownload(job.id),
+            );
             this.notifyListeners();
             cb?.onProgress?.(progress);
           },
           (filePath: string, filename: string) => {
             job.filePath = filePath;
             job.filename = filename;
+            notificationService.showDownloadComplete(job.id, job.videoTitle);
             cb?.onComplete?.(filePath, filename);
             resolve();
           },
           (error: string) => {
+            notificationService.showDownloadError(job.id, job.videoTitle, error);
             cb?.onError?.(error);
             reject(new Error(error));
           },
@@ -229,9 +240,8 @@ export class ClientDownloadQueue {
         downloadService.cancelDownload(internalId);
         this.idMap.delete(id);
       }
-      this.activeDownload.status = 'error';
-      this.activeDownload.error = 'Cancelled by user';
-      this.completed.set(this.activeDownload.id, { ...this.activeDownload });
+      // Cancel notification and drop the active job so it disappears from the list
+      notificationService.cancelNotification(id);
       this.activeDownload = null;
       this.notifyListeners();
       void this.processNext();
@@ -240,11 +250,9 @@ export class ClientDownloadQueue {
 
     const idx = this.queue.findIndex(j => j.id === id);
     if (idx >= 0) {
-      const [removed] = this.queue.splice(idx, 1);
-      removed.status = 'error';
-      removed.error = 'Cancelled by user';
-      removed.completedAt = Date.now();
-      this.completed.set(removed.id, removed);
+      // Remove from queue entirely and cancel notification
+      this.queue.splice(idx, 1);
+      notificationService.cancelNotification(id);
       this.notifyListeners();
       return;
     }

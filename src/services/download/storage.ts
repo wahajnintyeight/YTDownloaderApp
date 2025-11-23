@@ -1,13 +1,14 @@
 import RNFS from 'react-native-fs';
-import { Buffer } from 'buffer';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import { normalizeBase64 } from './chunks';
+import { Platform } from 'react-native';
 
 import {
   writeFile as safWriteFile,
   createFile,
   exists,
   unlink,
+  hasPermission,
 } from 'react-native-saf-x';
 
 export async function saveFromUrl(
@@ -15,6 +16,7 @@ export async function saveFromUrl(
   filename: string,
   mimeType?: string | null,
   customDownloadPath?: string | null,
+  onProgress?: (progress: number) => void,
 ): Promise<string> {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] 🌐 Starting URL save operation...`);
@@ -28,38 +30,138 @@ export async function saveFromUrl(
   try {
     const isSaf = downloadsPath.startsWith('content://');
 
-    console.log(`⬇️ Downloading file from URL...`);
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-    const arrayBuffer = await res.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer as any);
-    const base64Data = buffer.toString('base64');
-
     if (isSaf) {
-      const docMime = mimeType || 'application/octet-stream';
-      const childUri = `${downloadsPath}/${encodeURIComponent(filename)}`;
+      // SAF path: download to temp file first, then stream to SAF in chunks
+      console.log(`⬇️ Downloading to temp cache (SAF Mode)...`);
+      const tempPath = `${RNFS.CachesDirectoryPath}/${Date.now()}_${filename}`;
+      try {
+        const downloadRes = await RNFS.downloadFile({
+          fromUrl: url,
+          toFile: tempPath,
+          background: true,
+          discretionary: true,
+          progressDivider: 1,
+          progress: (p) => {
+            const total = p.contentLength || 0;
+            const written = p.bytesWritten || 0;
+            if (total > 0) {
+              const pct = Math.max(0, Math.min(100, Math.floor((written / total) * 90)));
+              onProgress?.(pct);
+            }
+          },
+        }).promise;
+        if (downloadRes.statusCode && downloadRes.statusCode >= 400) {
+          throw new Error(`HTTP ${downloadRes.statusCode}`);
+        }
 
-      const fileExists = await exists(childUri);
-      if (fileExists) {
-        console.log(`🗑️ Deleting existing file: ${filename}`);
-        await unlink(childUri);
+        // Permission check for SAF directory
+        const ok = await hasPermission(downloadsPath);
+        if (!ok) throw new Error('No permission for this SAF directory');
+
+        const docMime = mimeType || 'application/octet-stream';
+        const childUri = `${downloadsPath}/${encodeURIComponent(filename)}`;
+
+        // Ensure no stale file exists
+        try {
+          const fileExists = await exists(childUri);
+          if (fileExists) {
+            await unlink(childUri);
+          }
+        } catch {}
+
+        const doc = await createFile(childUri, { mimeType: docMime });
+        const targetUri = doc?.uri;
+        if (!targetUri) throw new Error('Failed to create file in SAF folder');
+
+        // Stream copy in 1MB chunks (base64)
+        const stat = await RNFS.stat(tempPath);
+        const fileSize = Number((stat as any)?.size || 0);
+        const chunkSize = 1024 * 1024; // 1 MB
+        let offset = 0;
+        console.log('🔄 Streaming from cache to SAF...');
+        while (offset < fileSize) {
+          const len = Math.min(chunkSize, fileSize - offset);
+          const chunkB64 = await RNFS.read(tempPath, len, offset, 'base64');
+          await safWriteFile(targetUri, chunkB64, { encoding: 'base64', append: true });
+          offset += len;
+
+          // Update progress for copy phase (90% -> 100%)
+          const pct = 90 + Math.floor((offset / fileSize) * 10);
+          onProgress?.(Math.min(100, pct));
+        }
+
+        console.log(`✅ File saved via SAF: ${targetUri}`);
+        return targetUri;
+      } finally {
+        // Cleanup temp file
+        try {
+          await RNFS.unlink(tempPath);
+        } catch {}
+      }
+    } else {
+      // Non-SAF path. On Android, prefer DownloadManager to leverage native notifications and background behavior
+      if (Platform.OS === 'android') {
+        const blob = (await import('react-native-blob-util')).default as typeof ReactNativeBlobUtil;
+        const downloadDir = blob.fs.dirs.DownloadDir;
+        const desiredBase = downloadsPath.startsWith(downloadDir)
+          ? downloadsPath
+          : `${downloadDir}/YTDownloader`;
+
+        try {
+          await RNFS.mkdir(desiredBase);
+        } catch {}
+
+        const destPath = `${desiredBase}/${filename}`;
+        console.log(`📝 Using Android DownloadManager -> ${destPath}`);
+
+        await blob
+          .config({
+            addAndroidDownloads: {
+              useDownloadManager: true,
+              notification: true,
+              title: filename,
+              description: 'Downloading...',
+              mime: mimeType || 'application/octet-stream',
+              mediaScannable: true,
+              path: destPath,
+            },
+          })
+          .fetch('GET', url);
+
+        // DownloadManager shows its own notification; we just return the path
+        onProgress?.(100);
+        return destPath;
       }
 
-      const doc = await createFile(childUri, { mimeType: docMime });
-      const targetUri = doc?.uri;
-      if (!targetUri) throw new Error('Failed to create file in SAF folder');
-      await safWriteFile(targetUri, base64Data, { encoding: 'base64' });
-      console.log(`✅ File saved via SAF: ${targetUri}`);
-      return targetUri;
-    } else {
+      // iOS (and other) fallback: RNFS with Notifee progress
       await RNFS.mkdir(downloadsPath);
       const filePath = `${downloadsPath}/${filename}`;
       console.log(`📝 Full file path: ${filePath}`);
-      await RNFS.writeFile(filePath, base64Data, 'base64');
+
+      const result = await RNFS.downloadFile({
+        fromUrl: url,
+        toFile: filePath,
+        background: true,
+        discretionary: true,
+        progressDivider: 1,
+        progress: (p) => {
+          const total = p.contentLength || 0;
+          const written = p.bytesWritten || 0;
+          if (total > 0) {
+            const pct = Math.max(0, Math.min(100, Math.floor((written / total) * 100)));
+            onProgress?.(pct);
+          }
+        },
+      }).promise;
+
+      if (result.statusCode >= 400) {
+        throw new Error(`HTTP ${result.statusCode}`);
+      }
+
       const stats = await RNFS.stat(filePath);
       console.log(`✅ File saved successfully!`);
       console.log(`📊 File size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+      onProgress?.(100);
       return filePath;
     }
   } catch (error) {
@@ -218,7 +320,7 @@ export async function exportToUserLocation(
     let blobFs: any | null = null;
     try {
       const blob = await import('react-native-blob-util');
-      blobFs = blob?.fs || null;
+      blobFs = (blob as any)?.fs || null;
     } catch {
       blobFs = null;
     }

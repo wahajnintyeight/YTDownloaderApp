@@ -74,6 +74,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
   const lastGestureY = useRef(0);
 
   const animationsRef = useRef<any[]>([]);
+  const lastVideoQualityRef = useRef<VideoQuality>('720p');
 
   const drawerStyles = useMemo(() => getDrawerStyles(theme), [theme]);
   const selectorStyles = useMemo(() => getSelectorStyles(theme), [theme]);
@@ -123,6 +124,20 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
       });
     };
   }, [visible, translateY, backdropOpacity, dragHandleScale]);
+
+  useEffect(() => {
+    if (selectedFormat === 'mp3') {
+      if (selectedQuality !== 'audio_only') {
+        lastVideoQualityRef.current = selectedQuality;
+        setSelectedQuality('audio_only');
+      }
+      if (showAllQualities) {
+        setShowAllQualities(false);
+      }
+    } else if (selectedQuality === 'audio_only') {
+      setSelectedQuality(lastVideoQualityRef.current || '720p');
+    }
+  }, [selectedFormat, selectedQuality, showAllQualities]);
 
   const panResponder = useMemo(
     () =>
@@ -213,7 +228,14 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
       const { downloadService } = await import('../services/downloadService');
       downloadService.setDownloadPath(downloadLocation);
 
-      await startDownload(video, selectedFormat, selectedQuality);
+      const sanitizedQuality =
+        selectedFormat === 'mp3'
+          ? ('audio_only' as VideoQuality)
+          : selectedQuality;
+
+      await startDownload(video, selectedFormat, sanitizedQuality, {
+        bitRate: selectedFormat === 'mp3' ? selectedBitrate : undefined,
+      });
 
       onClose();
 
@@ -236,6 +258,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
     video,
     selectedFormat,
     selectedQuality,
+    selectedBitrate,
     startDownload,
     isLocationSet,
     downloadLocation,
@@ -293,6 +316,9 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
     [showAllQualities],
   );
 
+  const isAudioFormat = selectedFormat === 'mp3';
+  const shouldShowQualitySelector = !isAudioFormat;
+
   // Helper button component
   const OptionButton: React.FC<{
     label: string;
@@ -349,39 +375,39 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
     expanded,
     onToggleExpand,
   }) => (
-    <View style={selectorStyles.container}>
-      <View style={selectorStyles.header}>
-        <Text style={[selectorStyles.title, { color: theme.colors.text }]}>
-          {title}
-        </Text>
-        {showExpand && (
-          <TouchableOpacity
-            style={selectorStyles.expandButton}
-            onPress={onToggleExpand}
-          >
-            <Text
-              style={[
-                selectorStyles.expandText,
-                { color: theme.colors.secondary },
-              ]}
+      <View style={selectorStyles.container}>
+        <View style={selectorStyles.header}>
+          <Text style={[selectorStyles.title, { color: theme.colors.text }]}>
+            {title}
+          </Text>
+          {showExpand && (
+            <TouchableOpacity
+              style={selectorStyles.expandButton}
+              onPress={onToggleExpand}
             >
-              {expanded ? 'Show Less' : `+${options.length - 3} More`}
-            </Text>
-          </TouchableOpacity>
-        )}
+              <Text
+                style={[
+                  selectorStyles.expandText,
+                  { color: theme.colors.secondary },
+                ]}
+              >
+                {expanded ? 'Show Less' : `+${options.length - 3} More`}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        <View style={selectorStyles.options}>
+          {options.map(option => (
+            <OptionButton
+              key={option}
+              label={option === 'audio_only' ? 'Audio Only' : option}
+              isSelected={selected === option}
+              onPress={() => onSelect(option)}
+            />
+          ))}
+        </View>
       </View>
-      <View style={selectorStyles.options}>
-        {options.map(option => (
-          <OptionButton
-            key={option}
-            label={option === 'audio_only' ? 'Audio Only' : option}
-            isSelected={selected === option}
-            onPress={() => onSelect(option)}
-          />
-        ))}
-      </View>
-    </View>
-  );
+    );
 
   if (!video) return null;
 
@@ -462,15 +488,21 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
                 onToggleExpand={() => setShowAllFormats(!showAllFormats)}
               />
 
-              <SelectorSection
-                title="Quality"
-                options={qualityOptions}
-                selected={selectedQuality}
-                onSelect={setSelectedQuality as any}
-                showExpand={SECONDARY_QUALITIES.length > 0}
-                expanded={showAllQualities}
-                onToggleExpand={() => setShowAllQualities(!showAllQualities)}
-              />
+              {shouldShowQualitySelector && (
+                <SelectorSection
+                  title="Quality"
+                  options={qualityOptions}
+                  selected={selectedQuality}
+                  onSelect={option => {
+                    const chosen = option as VideoQuality;
+                    lastVideoQualityRef.current = chosen;
+                    setSelectedQuality(chosen);
+                  }}
+                  showExpand={SECONDARY_QUALITIES.length > 0}
+                  expanded={showAllQualities}
+                  onToggleExpand={() => setShowAllQualities(!showAllQualities)}
+                />
+              )}
 
               {selectedFormat === 'mp3' && (
                 <SelectorSection
@@ -480,7 +512,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
                   onSelect={setSelectedBitrate}
                   showExpand={false}
                   expanded={false}
-                  onToggleExpand={() => {}}
+                  onToggleExpand={() => { }}
                 />
               )}
 
@@ -507,10 +539,12 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
                     disabled={isDownloading}
                   >
                     <Text style={drawerStyles.downloadButtonText}>
-                      Download {selectedFormat.toUpperCase()} -{' '}
-                      {selectedQuality === 'audio_only'
-                        ? 'Audio Only'
-                        : selectedQuality.toUpperCase()}
+                      {`Download ${selectedFormat.toUpperCase()} - ${isAudioFormat
+                          ? selectedBitrate.toUpperCase()
+                          : selectedQuality === 'audio_only'
+                            ? 'Audio Only'
+                            : selectedQuality.toUpperCase()
+                        }`}
                     </Text>
                   </TouchableOpacity>
                 )}

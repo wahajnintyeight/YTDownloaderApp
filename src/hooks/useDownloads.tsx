@@ -33,18 +33,18 @@ const pendingCancelSet = new Set<string>();
 
 type DownloadAction =
   | {
-      type: 'START_DOWNLOAD';
-      payload: {
-        id: string;
-        video: Video;
-        format: VideoFormat;
-        quality: VideoQuality;
-      };
-    }
+    type: 'START_DOWNLOAD';
+    payload: {
+      id: string;
+      video: Video;
+      format: VideoFormat;
+      quality: VideoQuality;
+    };
+  }
   | {
-      type: 'UPDATE_PROGRESS';
-      payload: { id: string; progress: number; serverDownloadId?: string };
-    }
+    type: 'UPDATE_PROGRESS';
+    payload: { id: string; progress: number; serverDownloadId?: string };
+  }
   | { type: 'COMPLETE_DOWNLOAD'; payload: { id: string; filePath: string } }
   | { type: 'FAIL_DOWNLOAD'; payload: { id: string; error: string } }
   | { type: 'CANCEL_DOWNLOAD'; payload: { id: string } }
@@ -110,6 +110,8 @@ const mapJobToDownload = (
     filePath: job.filePath,
     error: job.error,
     createdAt: new Date(job.createdAt),
+    startedAt: job.startedAt ? new Date(job.startedAt) : undefined,
+    completedAt: job.completedAt ? new Date(job.completedAt) : undefined,
   };
 };
 
@@ -188,11 +190,11 @@ const downloadReducer = (
         downloads: state.downloads.map(download =>
           download.id === action.payload.id
             ? {
-                ...download,
-                status: 'completed' as DownloadStatus,
-                filePath: action.payload.filePath,
-                progress: 100,
-              }
+              ...download,
+              status: 'completed' as DownloadStatus,
+              filePath: action.payload.filePath,
+              progress: 100,
+            }
             : download,
         ),
       };
@@ -203,10 +205,10 @@ const downloadReducer = (
         downloads: state.downloads.map(download =>
           download.id === action.payload.id
             ? {
-                ...download,
-                status: 'failed' as DownloadStatus,
-                error: action.payload.error,
-              }
+              ...download,
+              status: 'failed' as DownloadStatus,
+              error: action.payload.error,
+            }
             : download,
         ),
       };
@@ -238,6 +240,7 @@ interface DownloadContextType {
     video: Video,
     format: VideoFormat,
     quality: VideoQuality,
+    options?: { bitRate?: string },
   ) => Promise<string>;
   updateProgress: (id: string, progress: number) => void;
   completeDownload: (id: string, filePath: string) => void;
@@ -352,9 +355,37 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
     const UPDATE_THROTTLE = 500; // Update every 500ms max for better performance
 
     const unsubscribe = clientDownloadQueue.subscribe(queueState => {
-      // Throttle updates to reduce re-renders
       const now = Date.now();
-      if (now - lastUpdateTime < UPDATE_THROTTLE) {
+
+      // Determine if we should bypass throttle to ensure UI updates immediately for critical state changes
+      // (e.g. completion, start, error) instead of getting stuck at 100% due to throttle.
+      const uiActive = stateRef.current.downloads.find(
+        d => d.status === 'downloading',
+      );
+      const queueActive = queueState.activeDownload;
+
+      let shouldBypassThrottle = false;
+
+      if (uiActive && !queueActive) {
+        // Download finished (or stopped/failed) -> Bypass to show completion immediately
+        shouldBypassThrottle = true;
+      } else if (!uiActive && queueActive) {
+        // Download started -> Bypass to show start immediately
+        shouldBypassThrottle = true;
+      } else if (uiActive && queueActive && uiActive.id !== queueActive.id) {
+        // Active download changed -> Bypass
+        shouldBypassThrottle = true;
+      } else if (
+        uiActive &&
+        queueActive &&
+        uiActive.status !== queueActive.status
+      ) {
+        // Status changed -> Bypass
+        shouldBypassThrottle = true;
+      }
+
+      // Throttle updates to reduce re-renders, unless it's a critical state change
+      if (!shouldBypassThrottle && now - lastUpdateTime < UPDATE_THROTTLE) {
         return;
       }
       lastUpdateTime = now;
@@ -406,18 +437,15 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
       );
 
       console.log(
-        `🔄 [QUEUE SYNC] Active: ${
-          queueState.activeDownload ? 1 : 0
-        }, Queued: ${
-          queueState.queuedDownloads.length
+        `🔄 [QUEUE SYNC] Active: ${queueState.activeDownload ? 1 : 0
+        }, Queued: ${queueState.queuedDownloads.length
         }, Completed in session: ${completedArray.length}`,
       );
       console.log(
         `📂 [MERGE] Persisted from storage: ${persistedDownloads.length} downloads`,
       );
       console.log(
-        `🔀 [MERGE] Merging: ${downloads.length} from queue + ${
-          persistedDownloads.length
+        `🔀 [MERGE] Merging: ${downloads.length} from queue + ${persistedDownloads.length
         } persisted = ${downloads.length + persistedDownloads.length} total`,
       );
 
@@ -498,7 +526,7 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
         if (serverId && downloadService.isUsingChunkProgress(serverId)) {
           return;
         }
-      } catch {}
+      } catch { }
 
       if (since >= 35000) {
         // Prevent repeated prompts
@@ -516,7 +544,7 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
             {
               text: 'Keep Waiting',
               style: 'cancel',
-              onPress: () => {},
+              onPress: () => { },
             },
             {
               text: 'Retry',
@@ -558,6 +586,7 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
     video: Video,
     format: VideoFormat,
     quality: VideoQuality,
+    options?: { bitRate?: string },
   ): Promise<string> => {
     const localDownloadId = Date.now().toString();
     console.log(`🚀 Queueing download with ID: ${localDownloadId}`);
@@ -566,7 +595,10 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
 
     // Store video and quality for later mapping
     videoMapRef.current.set(localDownloadId, video);
-    qualityMapRef.current.set(localDownloadId, quality);
+
+    const sanitizedQuality: VideoQuality =
+      format === 'mp3' ? 'audio_only' : quality;
+    qualityMapRef.current.set(localDownloadId, sanitizedQuality);
 
     // Initialize progress tracking
     lastProgressRef.current.set(localDownloadId, { pct: 0, ts: Date.now() });
@@ -576,9 +608,10 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
     let qualityStr: string | undefined;
 
     if (format === 'mp3') {
-      bitRate = '320k'; // Default high quality for audio
+      bitRate = options?.bitRate || '320k'; // Default high quality for audio
+      qualityStr = '144p'; // Quietly send 144p for API compatibility
     } else {
-      qualityStr = quality === 'audio_only' ? '720p' : quality;
+      qualityStr = sanitizedQuality === 'audio_only' ? '720p' : sanitizedQuality;
     }
 
     // Create download job

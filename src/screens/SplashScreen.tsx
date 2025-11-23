@@ -7,15 +7,13 @@ import {
   ActivityIndicator,
   StatusBar,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../navigation/types';
 import { useTheme } from '../hooks/useTheme';
 
-type SplashScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Splash'>;
+interface SplashScreenProps {
+  onFinish?: () => void;
+}
 
-const SplashScreen: React.FC = () => {
-  const navigation = useNavigation<SplashScreenNavigationProp>();
+const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
   const { theme, isDark } = useTheme();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
@@ -37,21 +35,21 @@ const SplashScreen: React.FC = () => {
       }),
     ]).start();
 
-    // Show loading indicator after 2 seconds
+    // Show loading indicator after animation starts
     const loadingTimer = setTimeout(() => {
       setShowLoading(true);
-    }, 2000);
+    }, 500);
 
-    // Navigate to Main screen after initialization
-    const navigationTimer = setTimeout(() => {
-      navigation.replace('Main');
+    // Call onFinish callback after initialization (3 seconds total)
+    const finishTimer = setTimeout(() => {
+      onFinish?.();
     }, 3000);
 
     return () => {
       clearTimeout(loadingTimer);
-      clearTimeout(navigationTimer);
+      clearTimeout(finishTimer);
     };
-  }, [navigation, fadeAnim, scaleAnim]);
+  }, [fadeAnim, scaleAnim, onFinish]);
 
   const styles = StyleSheet.create({
     container: {
@@ -93,7 +91,7 @@ const SplashScreen: React.FC = () => {
         barStyle={isDark ? 'light-content' : 'dark-content'}
         backgroundColor={theme.colors.background}
       />
-      
+
       <Animated.View
         style={[
           styles.logoContainer,

@@ -243,3 +243,65 @@ export const ChevronDownIcon: React.FC<IconProps> = ({
     />
   </Svg>
 );
+
+export const FolderIcon: React.FC<IconProps> = ({ 
+  size = 24, 
+  color = '#000', 
+  strokeWidth = 2 
+}) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path 
+      d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" 
+      stroke={color} 
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
+
+export const ExternalLinkIcon: React.FC<IconProps> = ({ 
+  size = 24, 
+  color = '#000', 
+  strokeWidth = 2 
+}) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path 
+      d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" 
+      stroke={color} 
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Path 
+      d="M15 3h6v6" 
+      stroke={color} 
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <Path 
+      d="M10 14L21 3" 
+      stroke={color} 
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);
+
+export const ChevronLeftIcon: React.FC<IconProps> = ({ 
+  size = 24, 
+  color = '#000', 
+  strokeWidth = 2 
+}) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Path 
+      d="m15 18-6-6 6-6" 
+      stroke={color} 
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </Svg>
+);

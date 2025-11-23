@@ -13,6 +13,7 @@ import type { DownloadJob } from './download/queue';
 // API endpoint
 const BASE_URL = `${API_BASE_URL}/v2/api`;
 const USE_MOCK_DATA = false; // Using real API now
+const USE_TEST_DATA = false; // Use test data for load testing
 
 class ApiClient {
   private client: AxiosInstance;
@@ -123,6 +124,162 @@ class ApiClient {
   }
 
   async searchVideos(request: SearchRequest): Promise<SearchResponse> {
+    // Use test data for load testing (multiple downloads, queuing, load testing)
+    if (USE_TEST_DATA) {
+      const testData: ApiSearchResponse = {
+        code: 1009,
+        message: 'Data Fetched Successfully',
+        result: {
+          items: [
+            {
+              etag: 'X-Tt7kkUpdTmiwDeGNhebtwKKHE',
+              id: {
+                kind: 'youtube#video',
+                videoId: 'COx8HzGsCgM',
+              },
+              kind: 'youtube#searchResult',
+              snippet: {
+                channelId: 'UCBEm6Lb_3461POqnplWYn7g',
+                channelTitle: 'Calb',
+                description:
+                  'After announcing their retirement, Daft Punk retreat to their interdimensional ship to travel through space, time, and reality.',
+                liveBroadcastContent: 'none',
+                publishedAt: '2021-08-03T21:00:11Z',
+                thumbnails: {
+                  default: {
+                    height: 90,
+                    url: 'https://i.ytimg.com/vi/COx8HzGsCgM/default.jpg',
+                    width: 120,
+                  },
+                  high: {
+                    height: 360,
+                    url: 'https://i.ytimg.com/vi/COx8HzGsCgM/hqdefault.jpg',
+                    width: 480,
+                  },
+                  medium: {
+                    height: 180,
+                    url: 'https://i.ytimg.com/vi/COx8HzGsCgM/mqdefault.jpg',
+                    width: 320,
+                  },
+                },
+                title:
+                  'The Michael Jackson x Daft Punk Album: Thriller Access Memories',
+              },
+            },
+            {
+              etag: 'KhuCQ3WFqTeSC2foq7iQwjxVQzY',
+              id: {
+                kind: 'youtube#video',
+                videoId: 'guWjfEOHMPg',
+              },
+              kind: 'youtube#searchResult',
+              snippet: {
+                channelId: 'UCKTmTHt1eywYxg4U1kRljbg',
+                channelTitle: 'kastet 780',
+                description: 'источник: https://youtu.be/COx8HzGsCgM.',
+                liveBroadcastContent: 'none',
+                publishedAt: '2022-02-23T11:09:14Z',
+                thumbnails: {
+                  default: {
+                    height: 90,
+                    url: 'https://i.ytimg.com/vi/guWjfEOHMPg/default.jpg',
+                    width: 120,
+                  },
+                  high: {
+                    height: 360,
+                    url: 'https://i.ytimg.com/vi/guWjfEOHMPg/hqdefault.jpg',
+                    width: 480,
+                  },
+                  medium: {
+                    height: 180,
+                    url: 'https://i.ytimg.com/vi/guWjfEOHMPg/mqdefault.jpg',
+                    width: 320,
+                  },
+                },
+                title:
+                  'Thriller Access Memories: A Daft Punk &amp; Michael Jackson',
+              },
+            },
+            {
+              etag: 'd8bM4juYj6FCaoR1Vjn0Nw2QPPc',
+              id: {
+                kind: 'youtube#video',
+                videoId: '6dBMIv4zXS0',
+              },
+              kind: 'youtube#searchResult',
+              snippet: {
+                channelId: 'UCtEASYTE2sOSTeTWtB_A0VA',
+                channelTitle: 'a.l.1751',
+                description:
+                  'Original Video : https://youtube.com/watch?v=COx8HzGsCgM&si=EnSIkaIECMiOmarE.',
+                liveBroadcastContent: 'none',
+                publishedAt: '2023-01-18T10:00:45Z',
+                thumbnails: {
+                  default: {
+                    height: 90,
+                    url: 'https://i.ytimg.com/vi/6dBMIv4zXS0/default.jpg',
+                    width: 120,
+                  },
+                  high: {
+                    height: 360,
+                    url: 'https://i.ytimg.com/vi/6dBMIv4zXS0/hqdefault.jpg',
+                    width: 480,
+                  },
+                  medium: {
+                    height: 180,
+                    url: 'https://i.ytimg.com/vi/6dBMIv4zXS0/mqdefault.jpg',
+                    width: 320,
+                  },
+                },
+                title:
+                  'Thriller by Moroder - Daft Punk ft. Michael Jackson (Thriller Access Memories 03/09)',
+              },
+            },
+            {
+              etag: 'D-q-ugr9vYq2sA8J6pX684q8nMw',
+              id: {
+                kind: 'youtube#video',
+                videoId: 'RK44mALi5aU',
+              },
+              kind: 'youtube#searchResult',
+              snippet: {
+                channelId: 'UCBEm6Lb_3461POqnplWYn7g',
+                channelTitle: 'Calb',
+                description:
+                  'This is from my full length mashup album of Michael Jackson and Daft Punk. It\'s called Thriller Access Memories and it\'s available ...',
+                liveBroadcastContent: 'none',
+                publishedAt: '2021-08-15T21:15:47Z',
+                thumbnails: {
+                  default: {
+                    height: 90,
+                    url: 'https://i.ytimg.com/vi/RK44mALi5aU/default.jpg',
+                    width: 120,
+                  },
+                  high: {
+                    height: 360,
+                    url: 'https://i.ytimg.com/vi/RK44mALi5aU/hqdefault.jpg',
+                    width: 480,
+                  },
+                  medium: {
+                    height: 180,
+                    url: 'https://i.ytimg.com/vi/RK44mALi5aU/mqdefault.jpg',
+                    width: 320,
+                  },
+                },
+                title: 'I Feel Human Nature',
+              },
+            },
+          ],
+          nextPage: 'CAQQAA',
+          prevPage: '',
+          totalPage: 1000000,
+        },
+      };
+      
+      console.log('🧪 Using test data for search results (load testing mode)');
+      return this.transformApiResponse(testData);
+    }
+
     // Use mock data in development when backend is not available
     if (USE_MOCK_DATA) {
       try {

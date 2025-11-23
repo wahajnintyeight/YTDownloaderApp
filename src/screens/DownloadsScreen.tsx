@@ -11,6 +11,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../hooks/useTheme';
 import { useDownloads } from '../hooks/useDownloads';
+import { useDownloadManager } from '../hooks/useDownloadManager';
 import { Download, DownloadStatus } from '../types/video';
 import SwipeableDownloadItem from '../components/SwipeableDownloadItem';
 import DownloadItemMenu from '../components/DownloadItemMenu';
@@ -19,7 +20,8 @@ import { useDialog } from '../hooks/useDialog';
 import { SettingsIcon } from '../components/icons/ModernIcons';
 import { useEffect, useRef, useState } from 'react';
 import { getDownloadsScreenStyles } from './DownloadsScreen.styles';
-import { openFile, openDirectory } from '../utils/openFile';
+import { openDirectory } from '../utils/openFile';
+import RNFS from 'react-native-fs';
 
 // Removed DownloadItem component - now using SwipeableDownloadItem
 
@@ -33,6 +35,7 @@ const DownloadsScreen: React.FC = () => {
     retryDownloadByVideoId,
     forceCleanupAllDownloads,
   } = useDownloads();
+  const { downloadPath } = useDownloadManager();
   const { showDialog } = useDialog();
 
   // Menu state
@@ -185,45 +188,58 @@ const DownloadsScreen: React.FC = () => {
 
   const styles = useMemo(() => getDownloadsScreenStyles(theme), [theme]);
 
-  const handlePress = useCallback(
-    (item: Download) => {
-      if (item.status === 'completed' && item.filePath) {
-        openFile(item.filePath).catch(() => {
-          showDialog({
-            type: 'error',
-            title: 'Open Failed',
-            message:
-              'Could not open the file. It may have been moved or deleted.',
-            buttons: [{ text: 'OK', style: 'default', onPress: () => {} }],
-            dismissible: true,
-          });
-        });
-      }
-    },
-    [showDialog],
-  );
+  // When user taps a completed download, open its directory (not the file)
+  // Move handlePress below handleOpenDirectory to avoid use-before-declare error
+
 
   const handleOpenDirectory = useCallback(
-    async (filePath: string) => {
+    async () => {
       try {
-        // Extract directory path from file path
-        const directory = filePath.substring(0, filePath.lastIndexOf('/'));
+        // Use the stored download path from settings instead of trying to extract from file paths
+        const directoryToOpen = downloadPath || `${RNFS.DownloadDirectoryPath}/YTDownloader`;
+        const isSaf = directoryToOpen.startsWith('content://');
 
-        // Open directory using the utility function
-        await openDirectory(directory);
+        console.log(`📂 Opening configured download directory: ${directoryToOpen}`);
+
+        // Only check existence for filesystem paths, not SAF URIs
+        if (!isSaf) {
+          const exists = await RNFS.exists(directoryToOpen);
+          if (!exists) {
+            showDialog({
+              type: 'warning',
+              title: 'Directory Not Found',
+              message: 'The configured download directory does not exist. Please check your download location in Settings.',
+              buttons: [{ text: 'OK', style: 'default', onPress: () => {} }],
+              dismissible: true,
+            });
+            return;
+          }
+        }
+
+        // Open the configured download directory (openDirectory handles both SAF and filesystem)
+        await openDirectory(directoryToOpen);
       } catch (error) {
         console.error('Failed to open directory:', error);
         showDialog({
           type: 'error',
           title: 'Error',
-          message:
-            'Failed to open directory. The folder may have been moved or deleted.',
+          message: 'Failed to open download directory. Please check your download location in Settings.',
           buttons: [{ text: 'OK', style: 'default', onPress: () => {} }],
           dismissible: true,
         });
       }
     },
-    [showDialog],
+    [downloadPath, showDialog],
+  );
+
+  // Now define handlePress after handleOpenDirectory
+  const handlePress = useCallback(
+    (item: Download) => {
+      if (item.status === 'completed') {
+        handleOpenDirectory();
+      }
+    },
+    [handleOpenDirectory],
   );
 
   const handleMenuPress = useCallback(
@@ -274,10 +290,10 @@ const DownloadsScreen: React.FC = () => {
     }
 
     // Add Open Directory option for completed downloads
-    if (selectedItem.status === 'completed' && selectedItem.filePath) {
+    if (selectedItem.status === 'completed') {
       items.push({
         label: 'Open Directory',
-        onPress: () => handleOpenDirectory(selectedItem.filePath!),
+        onPress: () => handleOpenDirectory(),
       });
     }
 

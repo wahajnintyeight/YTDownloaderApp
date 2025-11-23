@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   ListRenderItem,
   TouchableOpacity,
 } from 'react-native';
+import { useRoute, RouteProp } from '@react-navigation/native';
 import { Video } from '../types/video';
 import { useTheme } from '../hooks/useTheme';
 import { useSearch } from '../hooks/useSearch';
@@ -17,15 +18,20 @@ import VideoResultCard from '../components/VideoResultCard';
 import LoadingAnimation from '../components/LoadingAnimation';
 import DownloadDrawer from '../components/DownloadDrawer';
 import AppHeader from '../components/AppHeader';
+import { MainTabParamList } from '../navigation/types';
+
+type BrowseScreenRouteProp = RouteProp<MainTabParamList, 'Browse'>;
 
 const BrowseScreen: React.FC = () => {
   const { theme } = useTheme();
+  const route = useRoute<BrowseScreenRouteProp>();
   const { results, loading, error, hasMore, search, loadMore } = useSearch();
   const { showSuccess } = useDialog();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
 
+  // DRY: Reusable search handler
   const handleSearch = useCallback(
     async (query: string) => {
       console.log('🔍 Search initiated:', query);
@@ -34,6 +40,15 @@ const BrowseScreen: React.FC = () => {
     },
     [search],
   );
+
+  // Handle test search trigger from navigation params (DRY: reuse existing search)
+  useEffect(() => {
+    const params = route.params;
+    if (params?.testSearch) {
+      const testQuery = 'test'; // Any query works when USE_TEST_DATA is enabled
+      handleSearch(testQuery);
+    }
+  }, [route.params, handleSearch]);
 
   const handleVideoPress = useCallback((video: Video) => {
     console.log('📹 Video selected:', video.title);
@@ -49,7 +64,7 @@ const BrowseScreen: React.FC = () => {
   const handleTestDownload = useCallback(() => {
     // Create a test video object with the specified video ID
     const testVideo: Video = {
-      id: 'YJVmu6yttiw',
+      id: 't9c2X-Dzijg',
       title: 'Test Video - Sample Download',
       thumbnailUrl: 'https://img.youtube.com/vi/GT8ornYrDEs/mqdefault.jpg',
       duration: 240, // 4 minutes

@@ -39,7 +39,7 @@ class DownloadService {
   private heartbeatTimers: Map<string, ReturnType<typeof setTimeout>> =
     new Map();
   private maxReconnectAttempts: number = 5;
-  private heartbeatTimeout: number = 30000; // 30 seconds
+  private heartbeatTimeout: number = 60000; // 60 seconds - increased to handle slow YouTube connections
   // Throttle progress logs per downloadId to avoid JS thread blocking
   private lastProgressLog: Map<string, { ts: number; pct: number }> = new Map();
   // Ensure progress is monotonic per downloadId
@@ -52,7 +52,6 @@ class DownloadService {
   private chunkBuffer: Map<string, string[]> = new Map();
   private totalChunksPerDownload: Map<string, number> = new Map();
   private receivedChunksPerDownload: Map<string, number> = new Map();
-  private lastReportedChunk: Map<string, number> = new Map();
   // Track listener context so we can resume after backgrounding
   private listenerContext: Map<
     string,
@@ -61,8 +60,11 @@ class DownloadService {
       onComplete?: (filePath: string, filename: string) => void;
       onError?: (error: string) => void;
       localDownloadId?: string;
+      videoTitle?: string;
     }
   > = new Map();
+  // Store videoTitle per downloadId for filename generation
+  private videoTitleMap: Map<string, string> = new Map();
   // Chunked download helpers
   private initializeChunkTracking(downloadId: string, totalChunks: number) {
     this.chunkBuffer.set(downloadId, new Array(totalChunks));
@@ -118,12 +120,42 @@ class DownloadService {
 
   // Export to user-selected location (SAF content URI or filesystem path)
 
+  private async ensureSink(
+    downloadId: string, 
+    filename: string, 
+    mimeType: string
+  ): Promise<any> {
+    let sink = this.sinkById.get(downloadId);
+    if (!sink) {
+      const { createSink } = await import('./download/storage-sink');
+      const baseDir = this.customDownloadPath || `${(await import('react-native-fs')).default.DownloadDirectoryPath}/YTDownloader`;
+      sink = await createSink(baseDir, filename, mimeType);
+      this.sinkById.set(downloadId, sink);
+    }
+    return sink;
+  }
+
+  private sanitizeFileName(name: string): string {
+    const cleaned = (name || '')
+      .replace(/[\\/:*?"<>|]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return cleaned.substring(0, 150) || 'download';
+  }
+
   private cleanupChunks(downloadId: string) {
     this.chunkBuffer.delete(downloadId);
     this.totalChunksPerDownload.delete(downloadId);
     this.receivedChunksPerDownload.delete(downloadId);
+    // Clean up sink tracking
+    this.sinkById.delete(downloadId);
+    // Clean up videoTitle mapping
+    this.videoTitleMap.delete(downloadId);
   }
 
+  // Streaming sink support for chunked downloads (replaces buffering)
+  private sinkById = new Map<string, any>(); // downloadId -> Sink interface
+  
   // normalizeBase64 removed; handled by helper in download/chunks
   private pausedOnBackground: Set<string> = new Set();
   private appState: AppStateStatus = 'active';
@@ -154,9 +186,12 @@ class DownloadService {
           ? `${RNFS.DownloadDirectoryPath}/YTDownloader`
           : `${RNFS.DocumentDirectoryPath}/YTDownloader`;
 
-      try {
-        await RNFS.mkdir(defaultPath);
-      } catch {}
+      // Only create directory for filesystem paths, not SAF URIs
+      if (!defaultPath.startsWith('content://')) {
+        try {
+          await RNFS.mkdir(defaultPath);
+        } catch {}
+      }
 
       await storageService.setDownloadPath(defaultPath);
       this.customDownloadPath = defaultPath;
@@ -206,6 +241,7 @@ class DownloadService {
               ctx.onComplete,
               ctx.onError,
               ctx.localDownloadId,
+              ctx.videoTitle,
             );
           }
         });
@@ -246,6 +282,11 @@ class DownloadService {
       );
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
+      // Store videoTitle for filename generation
+      if (options.videoTitle) {
+        this.videoTitleMap.set(downloadId, options.videoTitle);
+      }
+      
       // Start SSE immediately to avoid missing early events
       this.startSSEListener(
         downloadId,
@@ -253,6 +294,7 @@ class DownloadService {
         onComplete,
         onError,
         localDownloadId,
+        options.videoTitle,
       );
       // Initialize monotonic progress tracker
       this.lastForwardedProgress.set(downloadId, 0);
@@ -323,6 +365,7 @@ class DownloadService {
     onComplete?: (filePath: string, filename: string) => void,
     onError?: (error: string) => void,
     localDownloadId?: string,
+    videoTitle?: string,
   ): void {
     // Save context for potential resume
     this.listenerContext.set(downloadId, {
@@ -330,7 +373,12 @@ class DownloadService {
       onComplete,
       onError,
       localDownloadId,
+      videoTitle,
     });
+    // Also store in videoTitleMap for easy access
+    if (videoTitle) {
+      this.videoTitleMap.set(downloadId, videoTitle);
+    }
     const sseUrl = `${this.sseBaseUrl}/events/download-${downloadId}`;
     const timestamp = new Date().toISOString();
 
@@ -532,39 +580,11 @@ class DownloadService {
             }
 
             case 'file_chunk': {
-              const anyData: any = data as any;
-              const dId = anyData.downloadId || downloadId;
-              const idx: number = anyData.chunkIndex;
-              const total: number = anyData.totalChunks;
-              const chunkData: string = anyData.chunkData;
-
-              if (
-                typeof idx === 'number' &&
-                typeof total === 'number' &&
-                typeof chunkData === 'string'
-              ) {
-                // Mark that we're now using chunk-based progress
-                if (!this.useChunkProgress.get(dId)) {
-                  this.useChunkProgress.set(dId, true);
-                }
-
-                if (!this.chunkBuffer.has(dId)) {
-                  this.initializeChunkTracking(dId, total);
-                }
-
-                // Store raw chunk - sanitization happens once during assembly
-                const received = this.addChunk(dId, idx, chunkData);
-                const totalKnown =
-                  this.totalChunksPerDownload.get(dId) || total;
-                const pct = Math.min(100, (received / totalKnown) * 100);
-
-                // Only report progress every 10 chunks or at completion for better performance
-                const lastReported = this.lastReportedChunk.get(dId) || 0;
-                if (received - lastReported >= 10 || pct >= 100) {
-                  forwardProgress(dId, pct);
-                  this.lastReportedChunk.set(dId, received);
-                }
-              }
+              // NOTE: file_chunk events are deprecated in favor of S3 URL downloads
+              // This case is kept for backward compatibility but should not be used
+              console.warn(
+                '⚠️ Received deprecated file_chunk event. Server should use S3 URLs instead.',
+              );
               break;
             }
 
@@ -595,7 +615,8 @@ class DownloadService {
                     // Determine desired filename: videoTitle + extension, fallback to server filename
                     const providedTitle = (data as any).videoTitle as
                       | string
-                      | undefined;
+                      | undefined || 
+                      this.videoTitleMap.get(downloadId);
                     const serverFilename =
                       data.filename ||
                       data.file?.filename ||
@@ -619,6 +640,7 @@ class DownloadService {
                       desiredFilename,
                       urlMime || null,
                       this.customDownloadPath,
+                      (pct: number) => forwardProgress(downloadId, pct),
                     );
                     const resolvedTitle = (data as any).videoTitle || baseTitle;
                     const video: DownloadedVideo = {
@@ -654,7 +676,8 @@ class DownloadService {
                 data.mimeType || data.file?.mimeType || 'audio/mpeg';
               const providedTitle = (data as any).videoTitle as
                 | string
-                | undefined;
+                | undefined || 
+                this.videoTitleMap.get(downloadId);
               const rawServerFilename =
                 data.filename ||
                 data.file?.filename ||
@@ -674,8 +697,43 @@ class DownloadService {
               }
 
               if (!fileContent) {
+                // Check if we have a streaming sink or buffered chunks
+                const sink = this.sinkById.get(downloadId);
                 const hasChunks = this.chunkBuffer.has(downloadId);
-                if (hasChunks) {
+                
+                if (sink) {
+                  // Streaming download completed - finalize the sink
+                  setTimeout(async () => {
+                    try {
+                      const finalPath = await sink.finalize();
+                      forwardProgress(downloadId, 100);
+                      
+                      const video: DownloadedVideo = {
+                        id: localDownloadId || downloadId,
+                        videoId: (data as any).videoId || '',
+                        title: (data as any).videoTitle || filename,
+                        format: (data as any).format || 'mp3',
+                        filePath: finalPath,
+                        filename: filename,
+                        downloadedAt: Date.now(),
+                      };
+                      await storageService.addDownloadedVideo(video);
+
+                      const safeOnComplete = createCrashSafeWrapper(
+                        () => onComplete?.(finalPath, filename),
+                        'Download completion callback (sink) failed',
+                      );
+                      setTimeout(safeOnComplete, 0);
+                    } catch (e) {
+                      console.error('❌ Failed to finalize sink download', e);
+                      onError?.('Failed to complete download');
+                    } finally {
+                      this.cancelDownload(downloadId);
+                    }
+                  }, 0);
+                  break;
+                } else if (hasChunks) {
+                  // Traditional buffered chunks - use existing assembly logic
                   setTimeout(async () => {
                     try {
                       const start = Date.now();
@@ -695,6 +753,7 @@ class DownloadService {
                         filename,
                         mimeType,
                         async (filePath: string, savedName: string) => {
+                          forwardProgress(downloadId, 100);
                           const safeOnComplete = createCrashSafeWrapper(
                             () => onComplete?.(filePath, savedName),
                             'Download completion callback (chunk-assemble) failed',
@@ -766,6 +825,7 @@ class DownloadService {
                     normalizeBase64Helper(fileContent),
                     filename,
                   );
+                  forwardProgress(downloadId, 100);
 
                   console.log(`✅ File saved successfully!`);
                   console.log(`📂 File Path: ${filePath}`);
@@ -896,8 +956,10 @@ class DownloadService {
   setDownloadPath(path: string) {
     this.customDownloadPath = path;
     console.log(`📂 Download path set to: ${path}`);
-    // Ensure directory exists and persist for future sessions
-    RNFS.mkdir(path).catch(() => {});
+    // Only create directory for filesystem paths, not SAF URIs
+    if (!path.startsWith('content://')) {
+      RNFS.mkdir(path).catch(() => {});
+    }
     storageService.setDownloadPath(path).catch(() => {});
   }
 

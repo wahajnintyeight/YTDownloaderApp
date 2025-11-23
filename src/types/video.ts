@@ -24,6 +24,8 @@ export interface Download {
   filePath?: string;
   error?: string;
   createdAt: Date;
+  startedAt?: Date;
+  completedAt?: Date;
 }
 
 export interface SearchRequest {

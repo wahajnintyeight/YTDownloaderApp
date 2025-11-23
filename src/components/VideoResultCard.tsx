@@ -137,12 +137,7 @@ const VideoResultCard: React.FC<VideoResultCardProps> = ({ video, onPress }) => 
             <Text style={styles.placeholderText}>VIDEO</Text>
           </View>
         )}
-        
-        <View style={styles.durationOverlay}>
-          <Text style={styles.durationText}>
-            {formatDuration(video.duration)}
-          </Text>
-        </View>
+
       </View>
 
       <View style={styles.contentContainer}>

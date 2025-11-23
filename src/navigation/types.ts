@@ -6,7 +6,7 @@ export type RootStackParamList = {
 };
 
 export type MainTabParamList = {
-  Browse: undefined;
+  Browse: { testSearch?: boolean } | undefined;
   Downloads: undefined;
 };
 

@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
 import { Swipeable } from 'react-native-gesture-handler';
 import { Download, DownloadStatus } from '../types/video';
 import DownloadProgress from './DownloadProgress';
+import RNFS from 'react-native-fs';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DELETE_THRESHOLD = SCREEN_WIDTH * 0.3;
@@ -21,6 +22,7 @@ interface SwipeableDownloadItemProps {
   onDelete: (id: string) => void;
   onMenuPress?: (item: Download, position: { x: number; y: number }) => void;
   onPress?: (item: Download) => void;
+  onLongPress?: (item: Download) => void;
   statusColor: string;
   statusText: string;
   theme: any;
@@ -33,6 +35,7 @@ const SwipeableDownloadItem: React.FC<SwipeableDownloadItemProps> = ({
   onDelete,
   onMenuPress,
   onPress,
+  onLongPress,
   statusColor,
   statusText,
   theme,
@@ -41,6 +44,44 @@ const SwipeableDownloadItem: React.FC<SwipeableDownloadItemProps> = ({
   const swipeableRef = useRef<Swipeable>(null);
   const scaleValue = useRef(new Animated.Value(1)).current;
   const menuButtonRef = useRef<TouchableOpacity>(null);
+  const [sizeMB, setSizeMB] = useState<number | null>(null);
+  const [avgSpeedMBps, setAvgSpeedMBps] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const computeMetrics = async () => {
+      try {
+        if (!item.filePath) return;
+        const stat = await RNFS.stat(item.filePath);
+        const bytes = Number((stat as any)?.size || 0);
+        if (!bytes) return;
+
+        const mb = bytes / 1024 / 1024;
+        let speed: number | null = null;
+        if (item.startedAt && item.completedAt) {
+          const durSec =
+            (item.completedAt.getTime() - item.startedAt.getTime()) / 1000;
+          if (durSec > 0.5) {
+            speed = mb / durSec;
+          }
+        }
+
+        if (cancelled) return;
+        setSizeMB(mb);
+        setAvgSpeedMBps(speed);
+      } catch {
+        // Ignore stat errors (e.g., file moved/deleted)
+      }
+    };
+
+    if (item.status === 'completed' && item.filePath) {
+      computeMetrics();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [item.status, item.filePath, item.startedAt, item.completedAt]);
 
   const handlePressIn = () => {
     Animated.spring(scaleValue, {
@@ -138,11 +179,17 @@ const SwipeableDownloadItem: React.FC<SwipeableDownloadItemProps> = ({
           style={[s.downloadItem, { backgroundColor: theme.colors.surface }]}
         >
           <View style={s.cardContent}>
-            <Image
-              source={{ uri: item.video.thumbnailUrl }}
-              style={s.thumbnail}
-              resizeMode="cover"
-            />
+            {item.video.thumbnailUrl ? (
+              <Image
+                source={{ uri: item.video.thumbnailUrl }}
+                style={s.thumbnail}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[s.thumbnail, { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' }]}>
+                <Text style={{ color: '#666', fontSize: 10 }}>No Image</Text>
+              </View>
+            )}
 
             <View style={s.infoContainer}>
               <Text
@@ -160,6 +207,19 @@ const SwipeableDownloadItem: React.FC<SwipeableDownloadItemProps> = ({
                   {item.quality === 'audio_only' ? 'Audio' : item.quality}
                 </Text>
               </View>
+
+              {sizeMB != null && (
+                <View style={s.metaRow}>
+                  <Text
+                    style={[s.metaText, { color: theme.colors.textSecondary }]}
+                  >
+                    {sizeMB.toFixed(1)} MB
+                    {avgSpeedMBps != null
+                      ? ` • Avg ${avgSpeedMBps.toFixed(2)} MB/s`
+                      : ''}
+                  </Text>
+                </View>
+              )}
             </View>
 
             <View style={s.statusContainer}>
