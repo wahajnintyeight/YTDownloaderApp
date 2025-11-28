@@ -31,75 +31,120 @@ export async function saveFromUrl(
     const isSaf = downloadsPath.startsWith('content://');
 
     if (isSaf) {
-      // SAF path: download to temp file first, then stream to SAF in chunks
-      console.log(`⬇️ Downloading to temp cache (SAF Mode)...`);
-      const tempPath = `${RNFS.CachesDirectoryPath}/${Date.now()}_${filename}`;
-      try {
-        const downloadRes = await RNFS.downloadFile({
-          fromUrl: url,
-          toFile: tempPath,
-          background: true,
-          discretionary: true,
-          progressDivider: 1,
-          progress: (p) => {
-            const total = p.contentLength || 0;
-            const written = p.bytesWritten || 0;
-            if (total > 0) {
-              const pct = Math.max(0, Math.min(100, Math.floor((written / total) * 90)));
-              onProgress?.(pct);
+      // SAF path: Use DownloadManager for background download to temp, then copy to SAF
+      // This ensures the download continues even when app is backgrounded/screen is off
+      console.log(`⬇️ Downloading via DownloadManager (SAF Mode - background compatible)...`);
+      
+      if (Platform.OS === 'android') {
+        // Use DownloadManager to download to temp location (works in background)
+        const blob = (await import('react-native-blob-util')).default as typeof ReactNativeBlobUtil;
+        const tempDir = `${blob.fs.dirs.DownloadDir}/YTDownloader/temp`;
+        const tempPath = `${tempDir}/${Date.now()}_${filename}`;
+        
+        try {
+          // Ensure temp directory exists
+          try {
+            await RNFS.mkdir(tempDir);
+          } catch {}
+          
+          console.log(`📝 Using Android DownloadManager for background download -> ${tempPath}`);
+          
+          // Download to temp location using DownloadManager (works in background)
+          await blob
+            .config({
+              addAndroidDownloads: {
+                useDownloadManager: true,
+                notification: false, // We'll use our own notification
+                title: filename,
+                description: 'Downloading...',
+                mime: mimeType || 'application/octet-stream',
+                mediaScannable: false, // Don't scan temp files
+                path: tempPath,
+              },
+            })
+            .fetch('GET', url);
+          
+          console.log(`✅ Download complete, copying to SAF location...`);
+          
+          // Permission check for SAF directory
+          const ok = await hasPermission(downloadsPath);
+          if (!ok) throw new Error('No permission for this SAF directory');
+          
+          onProgress?.(90); // 90% done (download complete, now copying)
+          
+          const docMime = mimeType || 'application/octet-stream';
+          const childUri = `${downloadsPath}/${encodeURIComponent(filename)}`;
+          
+          // Ensure no stale file exists
+          try {
+            const fileExists = await exists(childUri);
+            if (fileExists) {
+              await unlink(childUri);
             }
-          },
-        }).promise;
-        if (downloadRes.statusCode && downloadRes.statusCode >= 400) {
-          throw new Error(`HTTP ${downloadRes.statusCode}`);
-        }
-
-        // Permission check for SAF directory
-        const ok = await hasPermission(downloadsPath);
-        if (!ok) throw new Error('No permission for this SAF directory');
-
-        const docMime = mimeType || 'application/octet-stream';
-        const childUri = `${downloadsPath}/${encodeURIComponent(filename)}`;
-
-        // Ensure no stale file exists
-        try {
-          const fileExists = await exists(childUri);
-          if (fileExists) {
-            await unlink(childUri);
+          } catch {}
+          
+          const doc = await createFile(childUri, { mimeType: docMime });
+          const targetUri = doc?.uri;
+          if (!targetUri) throw new Error('Failed to create file in SAF folder');
+          
+          // Stream copy in 1MB chunks (base64)
+          const stat = await RNFS.stat(tempPath);
+          const fileSize = Number((stat as any)?.size || 0);
+          const chunkSize = 1024 * 1024; // 1 MB
+          let offset = 0;
+          console.log('🔄 Streaming from temp to SAF...');
+          while (offset < fileSize) {
+            const len = Math.min(chunkSize, fileSize - offset);
+            const chunkB64 = await RNFS.read(tempPath, len, offset, 'base64');
+            await safWriteFile(targetUri, chunkB64, { encoding: 'base64', append: true });
+            offset += len;
+            
+            // Update progress for copy phase (90% -> 100%)
+            const pct = 90 + Math.floor((offset / fileSize) * 10);
+            onProgress?.(Math.min(100, pct));
           }
-        } catch {}
-
-        const doc = await createFile(childUri, { mimeType: docMime });
-        const targetUri = doc?.uri;
-        if (!targetUri) throw new Error('Failed to create file in SAF folder');
-
-        // Stream copy in 1MB chunks (base64)
-        const stat = await RNFS.stat(tempPath);
-        const fileSize = Number((stat as any)?.size || 0);
-        const chunkSize = 1024 * 1024; // 1 MB
-        let offset = 0;
-        console.log('🔄 Streaming from cache to SAF...');
-        while (offset < fileSize) {
-          const len = Math.min(chunkSize, fileSize - offset);
-          const chunkB64 = await RNFS.read(tempPath, len, offset, 'base64');
-          await safWriteFile(targetUri, chunkB64, { encoding: 'base64', append: true });
-          offset += len;
-
-          // Update progress for copy phase (90% -> 100%)
-          const pct = 90 + Math.floor((offset / fileSize) * 10);
-          onProgress?.(Math.min(100, pct));
+          
+          console.log(`✅ File saved via SAF: ${targetUri}`);
+          onProgress?.(100);
+          return targetUri;
+        } finally {
+          // Cleanup temp file
+          try {
+            await RNFS.unlink(tempPath);
+          } catch {}
         }
-
-        console.log(`✅ File saved via SAF: ${targetUri}`);
-        return targetUri;
-      } finally {
-        // Cleanup temp file
+      } else {
+        // iOS fallback: Use RNFS (SAF doesn't apply on iOS)
+        const tempPath = `${RNFS.CachesDirectoryPath}/${Date.now()}_${filename}`;
         try {
-          await RNFS.unlink(tempPath);
-        } catch {}
+          const downloadRes = await RNFS.downloadFile({
+            fromUrl: url,
+            toFile: tempPath,
+            background: true,
+            discretionary: true,
+            progressDivider: 1,
+            progress: (p) => {
+              const total = p.contentLength || 0;
+              const written = p.bytesWritten || 0;
+              if (total > 0) {
+                const pct = Math.max(0, Math.min(100, Math.floor((written / total) * 100)));
+                onProgress?.(pct);
+              }
+            },
+          }).promise;
+          if (downloadRes.statusCode && downloadRes.statusCode >= 400) {
+            throw new Error(`HTTP ${downloadRes.statusCode}`);
+          }
+          
+          // For iOS, just return temp path (SAF not applicable)
+          onProgress?.(100);
+          return tempPath;
+        } finally {
+          // Keep file for iOS (no SAF copy needed)
+        }
       }
     } else {
-      // Non-SAF path. On Android, prefer DownloadManager to leverage native notifications and background behavior
+      // Non-SAF path. On Android, use DownloadManager for reliable background downloads
       if (Platform.OS === 'android') {
         const blob = (await import('react-native-blob-util')).default as typeof ReactNativeBlobUtil;
         const downloadDir = blob.fs.dirs.DownloadDir;
@@ -112,23 +157,29 @@ export async function saveFromUrl(
         } catch {}
 
         const destPath = `${desiredBase}/${filename}`;
-        console.log(`📝 Using Android DownloadManager -> ${destPath}`);
+        console.log(`📝 Using Android DownloadManager (background compatible) -> ${destPath}`);
 
-        await blob
+        // DownloadManager works independently of JS thread, ensuring downloads continue
+        // even when app is backgrounded or screen is off
+        const response = await blob
           .config({
             addAndroidDownloads: {
               useDownloadManager: true,
-              notification: true,
+              notification: false, // We handle notifications via Notifee
               title: filename,
-              description: 'Downloading...',
+              description: 'Downloading video...',
               mime: mimeType || 'application/octet-stream',
               mediaScannable: true,
               path: destPath,
+              // Enable background download
+              pathInPublicDownloads: true,
             },
           })
           .fetch('GET', url);
 
-        // DownloadManager shows its own notification; we just return the path
+        console.log(`✅ DownloadManager download completed: ${destPath}`);
+        // DownloadManager handles the download in background, so we don't get progress callbacks
+        // But it ensures the download continues even when app is backgrounded
         onProgress?.(100);
         return destPath;
       }

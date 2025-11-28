@@ -11,6 +11,65 @@ try {
 }
 
 /**
+ * Get MIME type from file extension
+ */
+const getMimeTypeFromPath = (filePath: string): string => {
+  const extension = filePath.split('.').pop()?.toLowerCase() || '';
+  
+  const mimeTypes: Record<string, string> = {
+    // Video
+    mp4: 'video/mp4',
+    m4v: 'video/mp4',
+    mov: 'video/quicktime',
+    avi: 'video/x-msvideo',
+    mkv: 'video/x-matroska',
+    webm: 'video/webm',
+    flv: 'video/x-flv',
+    wmv: 'video/x-ms-wmv',
+    '3gp': 'video/3gpp',
+    '3g2': 'video/3gpp2',
+    // Audio
+    mp3: 'audio/mpeg',
+    m4a: 'audio/mp4',
+    aac: 'audio/aac',
+    ogg: 'audio/ogg',
+    opus: 'audio/opus',
+    wav: 'audio/wav',
+    wma: 'audio/x-ms-wma',
+    flac: 'audio/flac',
+    // Images
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    bmp: 'image/bmp',
+    // Documents
+    pdf: 'application/pdf',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ppt: 'application/vnd.ms-powerpoint',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    txt: 'text/plain',
+    html: 'text/html',
+    css: 'text/css',
+    js: 'text/javascript',
+    json: 'application/json',
+    xml: 'application/xml',
+    // Archives
+    zip: 'application/zip',
+    rar: 'application/x-rar-compressed',
+    '7z': 'application/x-7z-compressed',
+    tar: 'application/x-tar',
+    gz: 'application/gzip',
+  };
+  
+  return mimeTypes[extension] || 'application/octet-stream';
+};
+
+/**
  * Constructs the expected public download path for a file.
  * Based on the app's export pattern: /storage/emulated/0/Download/YTDownloader/{filename}
  */
@@ -74,8 +133,75 @@ export const openFile = async (
       // Make sure the path passed to the viewer/linking does not contain file://
       const cleanPath = path.startsWith('file://') ? path.replace('file://', '') : path;
 
+      // Handle SAF URIs differently - they need content:// URI format
+      const isSafUri = path.startsWith('content://');
+      
+      // On Android, use native intent system with proper MIME type for better app selection
+      if (Platform.OS === 'android') {
+        const mimeType = getMimeTypeFromPath(path);
+        logger.info(`Opening file on Android with MIME type: ${mimeType}`, { path, mimeType, isSafUri });
+        
+        // For SAF URIs, use content:// URI directly
+        if (isSafUri) {
+          try {
+            // For SAF URIs, we need to create an intent with the content URI and MIME type
+            const { NativeModules } = require('react-native');
+            const { IntentAndroid } = NativeModules;
+            
+            if (IntentAndroid && IntentAndroid.openURL) {
+              // Try opening the SAF URI directly - Android should handle MIME type from URI
+              await IntentAndroid.openURL(path);
+              logger.info(`SAF URI opened successfully: ${path}`);
+              return;
+            }
+          } catch (safError) {
+            logger.warn('Failed to open SAF URI with Intent, trying Linking:', safError);
+            // Fall through to Linking
+          }
+          
+          // Fallback: Try Linking with SAF URI
+          try {
+            await Linking.openURL(path);
+            logger.info(`SAF URI opened successfully with Linking: ${path}`);
+            return;
+          } catch (linkingError) {
+            logger.warn('Failed to open SAF URI with Linking:', linkingError);
+            throw new Error('Unable to open SAF file. Please check file permissions.');
+          }
+        }
+        
+        // For regular filesystem paths, try using native Android Intent with MIME type
+        // This ensures media apps (VLC, MX Player, etc.) appear in the "Open with" dialog
+        try {
+          // Try using react-native-blob-util's Android intent system if available
+          const ReactNativeBlobUtil = require('react-native-blob-util').default;
+          
+          // Check if the method exists (it might be named differently)
+          if (ReactNativeBlobUtil.android) {
+            // Try different possible method names
+            if (typeof ReactNativeBlobUtil.android.actionViewIntent === 'function') {
+              await ReactNativeBlobUtil.android.actionViewIntent(cleanPath, mimeType);
+              logger.info(`File opened successfully with Android intent: ${path}`);
+              return; // Success!
+            } else if (typeof ReactNativeBlobUtil.android.viewIntent === 'function') {
+              await ReactNativeBlobUtil.android.viewIntent(cleanPath, mimeType);
+              logger.info(`File opened successfully with Android viewIntent: ${path}`);
+              return; // Success!
+            }
+          }
+        } catch (blobError) {
+          logger.warn('Failed to open with react-native-blob-util, trying native Intent:', blobError);
+        }
+        
+        // Note: react-native-blob-util might not have actionViewIntent method
+        // We'll proceed to FileViewer which should handle MIME types better
+      }
+      
       if (FileViewer) {
-        // Use react-native-file-viewer if available
+        // Use react-native-file-viewer as fallback
+        const mimeType = getMimeTypeFromPath(path);
+        logger.info(`Using FileViewer with MIME type: ${mimeType}`);
+        
         await FileViewer.open(cleanPath, {
           showOpenWithDialog: options?.showOpenWithDialog ?? true,
           displayName: options?.displayName,
@@ -83,8 +209,10 @@ export const openFile = async (
         logger.info(`File opened successfully with FileViewer: ${path}`);
         return; // Success!
       } else {
-        // Fallback to Linking.openURL
-        const fileUrl = `file://${cleanPath}`;
+        // Last resort: Fallback to Linking.openURL
+        const mimeType = getMimeTypeFromPath(path);
+        logger.warn(`Using Linking.openURL fallback (MIME type: ${mimeType})`);
+        const fileUrl = isSafUri ? path : `file://${cleanPath}`;
         await Linking.openURL(fileUrl);
         logger.info(`File opened successfully with Linking: ${path}`);
         return; // Success!
@@ -106,11 +234,21 @@ export const openFile = async (
 };
 
 /**
+ * Result type for directory opening operations
+ */
+export interface DirectoryOpenResult {
+  success: boolean;
+  infoMessage?: string; // If success is false and this is set, show as info dialog
+  errorMessage?: string; // If success is false and this is set, show as error dialog
+}
+
+/**
  * Opens a directory in the system file explorer.
  * Handles both file system paths and SAF (Storage Access Framework) URIs.
  * @param directoryPath - Absolute path or SAF URI to the directory to open.
+ * @returns Result object indicating success or providing message for dialog
  */
-export const openDirectory = async (directoryPath: string): Promise<void> => {
+export const openDirectory = async (directoryPath: string): Promise<DirectoryOpenResult | void> => {
   try {
     logger.info(`Attempting to open directory: ${directoryPath}`);
 
@@ -133,55 +271,51 @@ export const openDirectory = async (directoryPath: string): Promise<void> => {
             throw new Error('No permission to access SAF directory');
           }
 
-          // Try to open SAF directory using direct Linking with content URI
-          // This works well for SAF URIs on Android
+          // NOTE: Opening SAF directories programmatically is problematic on Android
+          // Linking.openURL() shows browsers/messages instead of file managers
+          // We'll show an informative dialog with the folder path instead
+          
+          // Extract a readable folder name from the URI
+          const uriParts = directoryPath.split('/');
+          const folderName = uriParts[uriParts.length - 1] || 'selected folder';
+          
+          // Verify we have access to this directory and count files
+          let fileCount = 0;
           try {
-            await Linking.openURL(directoryPath);
-            logger.info(`SAF directory opened via Linking: ${directoryPath}`);
-            return;
-          } catch (linkingError) {
-            logger.warn('Direct Linking failed, trying Intent approach:', linkingError);
-          }
-
-          // Fallback: Try Intent (if available)
-          try {
-            const { NativeModules } = require('react-native');
-            const { IntentAndroid } = NativeModules;
-
-            if (IntentAndroid && IntentAndroid.openURL) {
-              // IntentAndroid.openURL only accepts 1 argument (the URL)
-              await IntentAndroid.openURL(directoryPath);
-              logger.info(`SAF directory opened via Intent: ${directoryPath}`);
-              return;
-            }
-          } catch (intentError) {
-            logger.warn('Intent approach also failed:', intentError);
-          }
-
-          // Fallback: Try opening with generic file manager Intent
-          try {
-            // Try to open Downloads folder as fallback for SAF directories
-            const downloadsUri = 'content://com.android.providers.downloads.documents/root/downloads';
-            await Linking.openURL(downloadsUri);
-            logger.info(`Opened Downloads folder as fallback for SAF directory`);
-            return;
-          } catch (fallbackError) {
-            logger.warn('All open methods failed, will show path in dialog');
-          }
-
-          // If all attempts fail, verify access and return (caller will show dialog)
-          try {
-            await safX.listFiles(directoryPath);
-            logger.info(`SAF directory access verified: ${directoryPath}`);
+            const files = await safX.listFiles(directoryPath);
+            fileCount = files?.length || 0;
+            logger.info(`SAF directory access verified: ${directoryPath} (${fileCount} items)`);
           } catch (listError) {
             logger.warn('Failed to list SAF directory files:', listError);
           }
-
-          // Return successfully - caller can show dialog with path info
-          return;
-        } catch (safError) {
+          
+          // Extract a more readable path (remove the long content:// prefix)
+          const readablePath = directoryPath.replace(/content:\/\/[^/]+\/[^/]+\//, '');
+          
+          // For SAF directories, we can't automatically open them in file managers
+          // Return result instead of throwing to avoid error logging
+          const infoMessage = 
+            `📂 Folder Location\n\n` +
+            `Folder: ${folderName}\n` +
+            (fileCount > 0 ? `Files: ${fileCount} items\n\n` : '\n') +
+            `Due to Android security restrictions, we cannot automatically open this folder in your file manager.\n\n` +
+            `Please navigate to this folder manually:\n` +
+            `1. Open your file manager app\n` +
+            `2. Navigate to: ${readablePath || folderName}\n\n` +
+            `Your downloads are saved to this location.`;
+          
+          // Return result instead of throwing - this prevents error logging
+          logger.info(`Cannot auto-open SAF directory, returning info message for dialog`);
+          return {
+            success: false,
+            infoMessage,
+          };
+        } catch (safError: any) {
           logger.error('SAF access failed:', safError);
-          throw new Error('Unable to access SAF directory. Please re-select the folder.');
+          return {
+            success: false,
+            errorMessage: 'Unable to access SAF directory. Please re-select the folder.',
+          };
         }
       } else {
         throw new Error('SAF URIs are only supported on Android');
@@ -197,7 +331,7 @@ export const openDirectory = async (directoryPath: string): Promise<void> => {
         try {
           await RNFS.mkdir(normalized);
           logger.info(`Created directory: ${normalized}`);
-        } catch (mkdirError) {
+        } catch {
           throw new Error('Directory does not exist and could not be created');
         }
       }
@@ -224,6 +358,7 @@ export const openDirectory = async (directoryPath: string): Promise<void> => {
             const { NativeModules } = require('react-native');
             const { IntentAndroid } = NativeModules;
 
+            const downloadsUri = 'content://com.android.providers.downloads.documents/root/downloads';
             if (IntentAndroid && IntentAndroid.openURL) {
               // IntentAndroid.openURL only accepts 1 argument (the URL)
               await IntentAndroid.openURL(downloadsUri);
@@ -274,8 +409,11 @@ export const openDirectory = async (directoryPath: string): Promise<void> => {
         logger.info(`File system directory opened successfully: ${directoryPath}`);
       }
     }
-  } catch (error) {
+  } catch (error: any) {
     logger.error('Failed to open directory:', { directoryPath, error });
-    throw error;
+    return {
+      success: false,
+      errorMessage: error?.message || 'Failed to open directory',
+    };
   }
 };

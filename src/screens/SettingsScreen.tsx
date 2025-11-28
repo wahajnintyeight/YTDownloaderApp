@@ -14,7 +14,7 @@ import { useDownloadManager } from '../hooks/useDownloadManager';
 import { useTheme } from '../hooks/useTheme';
 import { useDialog } from '../hooks/useDialog';
 import { FolderIcon, ExternalLinkIcon, ChevronLeftIcon, SearchIcon } from '../components/icons/ModernIcons';
-import { openDirectory } from '../utils/openFile';
+import { openDirectory, DirectoryOpenResult } from '../utils/openFile';
 import { getSettingsScreenStyles } from './SettingsScreen.styles';
 import RNFS from 'react-native-fs';
 
@@ -143,7 +143,7 @@ export const SettingsScreen: React.FC = () => {
 
       // SAF: Check permission and verify access
       try {
-        const { hasPermission, listFiles } = await import('react-native-saf-x');
+        const { hasPermission } = await import('react-native-saf-x');
         const ok = await hasPermission(dir);
         if (!ok) {
           // Re-persist if needed
@@ -160,68 +160,95 @@ export const SettingsScreen: React.FC = () => {
           return;
         }
         // Try to open the directory using openDirectory helper
-        try {
-          await openDirectory(dir);
-          // If openDirectory succeeds, directory was opened successfully
-          // No need to show a dialog - the file manager should have opened
-          // The function returns successfully if it could open the directory
-          return;
-        } catch (openError: any) {
-          // If opening fails, verify access and show path info
-          console.warn('Failed to open directory:', openError);
-          
-          // Try to verify access
-          try {
-            await listFiles(dir);
-            showDialog({
-              type: 'info',
-              title: 'Folder Location',
-              message: `Could not open folder automatically.\n\nPath: ${dir}\n\nPlease navigate to this folder manually in your file manager app.`,
-              buttons: [
-                { text: 'OK', style: 'default', onPress: () => {} },
-              ],
-              dismissible: true,
-            });
-          } catch {
-            // If listing also fails, show error
-            showDialog({
-              type: 'warning',
-              title: 'Cannot Access Folder',
-              message: `Unable to open or access the folder.\n\nPath: ${dir}\n\nPlease re-select the folder or navigate manually.`,
-              buttons: [
-                { text: 'Cancel', style: 'cancel', onPress: () => {} },
-                { text: 'Change Location', style: 'default', onPress: handleChangeDownloadPath },
-              ],
-              dismissible: true,
-            });
+        const result = await openDirectory(dir) as DirectoryOpenResult | void;
+        
+        // Check if we got a result object (means directory couldn't be opened automatically)
+        if (result && typeof result === 'object' && 'success' in result) {
+          if (!result.success) {
+            // Show appropriate dialog based on result type
+            if (result.infoMessage) {
+              showDialog({
+                type: 'info',
+                title: 'Folder Location',
+                message: result.infoMessage,
+                buttons: [
+                  { text: 'OK', style: 'default', onPress: () => {} },
+                ],
+                dismissible: true,
+              });
+            } else if (result.errorMessage) {
+              showDialog({
+                type: 'error',
+                title: 'Error',
+                message: result.errorMessage,
+                buttons: [
+                  { text: 'Cancel', style: 'cancel', onPress: () => {} },
+                  { text: 'Change Location', style: 'default', onPress: handleChangeDownloadPath },
+                ],
+                dismissible: true,
+              });
+            }
           }
+          // If success is true, directory was opened successfully
+          return;
         }
-      } catch (safError) {
-        console.error('SAF operation failed:', safError);
+        // If result is undefined/void, directory was opened successfully
+        return;
+      } catch (safError: any) {
+        // Only log as error if it's not an informational message
+        const isInfoMessage = safError?.isInfoMessage || safError?.message?.startsWith('📂');
+        if (!isInfoMessage) {
+          console.error('SAF operation failed:', safError);
+          showDialog({
+            type: 'error',
+            title: 'Cannot Access Folder',
+            message: 'Unable to access the selected folder. Please choose a different location.',
+            buttons: [
+              { text: 'Cancel', style: 'cancel', onPress: () => {} },
+              { text: 'Change Location', style: 'default', onPress: handleChangeDownloadPath },
+            ],
+            dismissible: true,
+          });
+        } else {
+          // Re-throw informational messages to be handled by outer catch
+          throw safError;
+        }
+      }
+    } catch (error: any) {
+      const errorMessage = error?.message || 'Failed to open download directory. Please check your download location settings.';
+      
+      // Check if this is an informational message (not a real error)
+      const isInfoMessage = error?.isInfoMessage || errorMessage.startsWith('📂');
+      
+      // Only log as error if it's not an informational message
+      if (!isInfoMessage) {
+        console.error('Failed to open directory:', error);
+      }
+      
+      if (isInfoMessage) {
+        // Show as informational dialog with just OK button
+        showDialog({
+          type: 'info',
+          title: 'Folder Location',
+          message: errorMessage,
+          buttons: [
+            { text: 'OK', style: 'default' as const, onPress: () => {} },
+          ],
+          dismissible: true,
+        });
+      } else {
+        // Show as error dialog with Cancel and Change Location buttons
         showDialog({
           type: 'error',
-          title: 'Cannot Access Folder',
-          message: 'Unable to access the selected folder. Please choose a different location.',
+          title: 'Error',
+          message: errorMessage,
           buttons: [
-            { text: 'Cancel', style: 'cancel', onPress: () => {} },
-            { text: 'Change Location', style: 'default', onPress: handleChangeDownloadPath },
+            { text: 'Cancel', style: 'cancel' as const, onPress: () => {} },
+            { text: 'Change Location', style: 'default' as const, onPress: handleChangeDownloadPath },
           ],
           dismissible: true,
         });
       }
-    } catch (error: any) {
-      console.error('Failed to open directory:', error);
-      const errorMessage = error?.message || 'Failed to open download directory. Please check your download location settings.';
-      showDialog({
-        type: 'error',
-        title: 'Error',
-        message: errorMessage,
-        buttons: [
-          { text: 'Cancel', style: 'cancel', onPress: () => {} },
-          { text: 'Change Location', style: 'default', onPress: handleChangeDownloadPath },
-        ],
-        dismissible: true,
-      });
     }
   }, [downloadPath, getDefaultDownloadPath, showDialog, handleChangeDownloadPath]);
 

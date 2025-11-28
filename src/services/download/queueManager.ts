@@ -64,6 +64,15 @@ export class ClientDownloadQueue {
     next.startedAt = Date.now();
     next.progress = 0;
     this.notifyListeners();
+    
+    // Show notification immediately when download starts (not just on progress)
+    notificationService.showDownloadProgress(
+      next.id,
+      next.videoTitle,
+      0,
+      'Starting download...',
+      () => this.cancelDownload(next.id),
+    );
 
     try {
       await this.executeDownload(next);

@@ -18,7 +18,7 @@ import DownloadItemMenu from '../components/DownloadItemMenu';
 import LottieAnimation from '../components/LottieAnimation';
 import { useDialog } from '../hooks/useDialog';
 import { SettingsIcon } from '../components/icons/ModernIcons';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getDownloadsScreenStyles } from './DownloadsScreen.styles';
 import { openDirectory } from '../utils/openFile';
 import RNFS from 'react-native-fs';
@@ -35,8 +35,14 @@ const DownloadsScreen: React.FC = () => {
     retryDownloadByVideoId,
     forceCleanupAllDownloads,
   } = useDownloads();
-  const { downloadPath } = useDownloadManager();
+  const { downloadPath, loadingPath } = useDownloadManager();
   const { showDialog } = useDialog();
+
+  // Debug: Log when downloadPath changes
+  useEffect(() => {
+    console.log(`📂 [DOWNLOADS SCREEN] downloadPath state changed:`, downloadPath);
+    console.log(`📂 [DOWNLOADS SCREEN] loadingPath:`, loadingPath);
+  }, [downloadPath, loadingPath]);
 
   // Menu state
   const [menuVisible, setMenuVisible] = useState(false);
@@ -196,7 +202,22 @@ const DownloadsScreen: React.FC = () => {
     async () => {
       try {
         // Use the stored download path from settings instead of trying to extract from file paths
-        const directoryToOpen = downloadPath || `${RNFS.DownloadDirectoryPath}/YTDownloader`;
+        console.log('📂 Download path from hook:', downloadPath);
+        
+        // If downloadPath is null (not loaded yet), try reading directly from storage
+        let directoryToOpen = downloadPath;
+        if (!directoryToOpen) {
+          try {
+            const { storageService } = await import('../services/storageService');
+            directoryToOpen = await storageService.getDownloadPath();
+            console.log('📂 Loaded download path directly from storage:', directoryToOpen);
+          } catch (error) {
+            console.warn('Failed to load path from storage, using default', error);
+          }
+        }
+        
+        // Fallback to default if still null
+        directoryToOpen = directoryToOpen || `${RNFS.DownloadDirectoryPath}/YTDownloader`;
         const isSaf = directoryToOpen.startsWith('content://');
 
         console.log(`📂 Opening configured download directory: ${directoryToOpen}`);

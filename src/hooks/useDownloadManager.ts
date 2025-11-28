@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { storageService, DownloadedVideo } from '../services/storageService';
 import { downloadService } from '../services/downloadService';
 import RNFS from 'react-native-fs';
@@ -51,40 +51,42 @@ export const useDownloadManager = (): UseDownloadManagerReturn => {
     }
   }, []);
 
-  // Load download path from storage
+  // Load download path from storage (helper function, also used in initialization)
   const loadDownloadPath = useCallback(async () => {
     setLoadingPath(true);
     try {
       const path = await storageService.getDownloadPath();
-      const resolvedPath = path || getDefaultDownloadPath();
+      const defaultPath = `${RNFS.DownloadDirectoryPath}/YTDownloader`;
+      const resolvedPath = path || defaultPath;
+      console.log(`✅ Loaded download path from storage: ${resolvedPath}`);
       setDownloadPath(resolvedPath);
-      console.log(`✅ Loaded download path: ${resolvedPath}`);
+      console.log(`✅ State updated with download path: ${resolvedPath}`);
+      return resolvedPath;
     } catch (error) {
       console.error('❌ Failed to load download path', error);
-      setDownloadPath(getDefaultDownloadPath());
+      const defaultPath = `${RNFS.DownloadDirectoryPath}/YTDownloader`;
+      setDownloadPath(defaultPath);
+      return defaultPath;
     } finally {
       setLoadingPath(false);
     }
-  }, [getDefaultDownloadPath]);
+  }, []);
 
   // Update download path
-  const updateDownloadPath = useCallback(
-    async (newPath: string) => {
-      setLoadingPath(true);
-      try {
-        await storageService.setDownloadPath(newPath);
-        downloadService.setDownloadPath(newPath);
-        setDownloadPath(newPath);
-        console.log(`✅ Download path updated: ${newPath}`);
-      } catch (error) {
-        console.error('❌ Failed to update download path', error);
-        throw error;
-      } finally {
-        setLoadingPath(false);
-      }
-    },
-    [],
-  );
+  const updateDownloadPath = useCallback(async (newPath: string) => {
+    setLoadingPath(true);
+    try {
+      await storageService.setDownloadPath(newPath);
+      downloadService.setDownloadPath(newPath);
+      setDownloadPath(newPath);
+      console.log(`✅ Download path updated: ${newPath}`);
+    } catch (error) {
+      console.error('❌ Failed to update download path', error);
+      throw error;
+    } finally {
+      setLoadingPath(false);
+    }
+  }, []);
 
   // Reset download path to default
   const resetDownloadPath = useCallback(async () => {
@@ -115,13 +117,34 @@ export const useDownloadManager = (): UseDownloadManagerReturn => {
     }
   }, []);
 
-  // Initialize on mount
+  // Track if initialization has happened
+  const initializedRef = useRef(false);
+
+  // Initialize on mount - load path first, then videos
   useEffect(() => {
+    // Only initialize once
+    if (initializedRef.current) return;
+    
+    let mounted = true;
+    initializedRef.current = true;
+    
     const initialize = async () => {
-      await Promise.all([loadDownloadPath(), refreshDownloadList()]);
+      // Load download path first using the helper function
+      await loadDownloadPath();
+      
+      // Only proceed if component is still mounted
+      if (!mounted) return;
+      
+      // Load videos
+      await refreshDownloadList();
     };
+    
     initialize();
-  }, [loadDownloadPath, refreshDownloadList]);
+    
+    return () => {
+      mounted = false;
+    };
+  }, [loadDownloadPath, refreshDownloadList]); // Include dependencies - they're stable useCallbacks
 
   return {
     downloadedVideos,
