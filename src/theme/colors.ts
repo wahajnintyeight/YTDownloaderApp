@@ -1,9 +1,11 @@
 import { ColorPalette } from '../types/theme';
 
 export const lightColors: ColorPalette = {
-  primary: '#FF6B6B',      // Vibrant red
-  secondary: '#FF1744',    // Neon red
-  accent: '#FFE66D',       // Vibrant yellow
+  // Single YouTube red used consistently across the app
+  primary: '#FF0000',
+  secondary: '#FF0000',
+  // YouTube-style blue accent (e.g. for links, highlights)
+  accent: '#3EA6FF',
   background: '#FFFFFF',
   surface: '#F7F7F7',
   text: '#2D3436',
@@ -14,9 +16,11 @@ export const lightColors: ColorPalette = {
 };
 
 export const darkColors: ColorPalette = {
-  primary: '#FF6B6B',      // Vibrant red
-  secondary: '#FF1744',    // Neon red
-  accent: '#FFE66D',       // Vibrant yellow
+  // Single YouTube red used consistently across the app
+  primary: '#FF0000',
+  secondary: '#FF0000',
+  // YouTube-style blue accent (e.g. for links, highlights)
+  accent: '#3EA6FF',
   background: '#0A0A0A',   // Deeper near-true black
   surface: '#121212',      // Dark surface with subtle elevation
   text: '#FFFFFF',

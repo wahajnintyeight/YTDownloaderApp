@@ -13,7 +13,7 @@ import type { DownloadJob } from './download/queue';
 // API endpoint
 const BASE_URL = `${API_BASE_URL}/v2/api`;
 const USE_MOCK_DATA = false; // Using real API now
-const USE_TEST_DATA = false; // Use test data for load testing
+const USE_TEST_DATA = true; // Use test data for load testing
 
 class ApiClient {
   private client: AxiosInstance;

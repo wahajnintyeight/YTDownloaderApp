@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { MainTabNavigator } from './MainTabNavigator';
-import { SettingsScreen, SplashScreen } from '../screens';
+import { SettingsScreen, SplashScreen, VideoViewerScreen } from '../screens';
 
 const Stack = createNativeStackNavigator();
 
@@ -37,6 +37,13 @@ export const AppNavigator: React.FC = () => {
         <Stack.Screen
           name="Settings"
           component={SettingsScreen}
+          options={{
+            headerShown: false,
+          }}
+        />
+        <Stack.Screen
+          name="VideoViewer"
+          component={VideoViewerScreen}
           options={{
             headerShown: false,
           }}
