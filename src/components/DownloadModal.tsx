@@ -39,7 +39,7 @@ const DownloadModal: React.FC<DownloadModalProps> = ({
   video,
   onClose,
 }) => {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { startDownload } = useDownloads();
   const { showSuccess, showError } = useDialog();
   const [selectedFormat, setSelectedFormat] = useState<VideoFormat>('mp4');
@@ -122,8 +122,8 @@ const DownloadModal: React.FC<DownloadModalProps> = ({
                   backgroundColor:
                     selectedFormat === format
                       ? theme.colors.primary
-                      : theme.colors.surface,
-                  borderColor: theme.colors.border,
+                      : isDark ? theme.colors.surface : '#F5F5F5',
+                  borderColor: selectedFormat === format ? theme.colors.primary : theme.colors.border,
                 },
               ]}
               onPress={() => setSelectedFormat(format)}
@@ -179,8 +179,8 @@ const DownloadModal: React.FC<DownloadModalProps> = ({
                   backgroundColor:
                     selectedQuality === quality
                       ? theme.colors.primary
-                      : theme.colors.surface,
-                  borderColor: theme.colors.border,
+                      : isDark ? theme.colors.surface : '#F5F5F5',
+                  borderColor: selectedQuality === quality ? theme.colors.primary : theme.colors.border,
                 },
               ]}
               onPress={() => setSelectedQuality(quality)}

@@ -50,6 +50,12 @@ export const MainTabNavigator: React.FC = () => {
     d => d.status === 'downloading' || d.status === 'pending',
   ).length;
 
+  const activeLabelColor = isDark ? '#FFFFFF' : '#FFFFFF';
+  const inactiveLabelColor = isDark
+    ? theme.colors.textSecondary
+    : 'rgba(255,255,255,0.6)';
+  const tabBarBackgroundColor = isDark ? theme.colors.surface : '#1A1A1A';
+
   return (
     <Tab.Navigator
       initialRouteName="Browse"
@@ -62,14 +68,14 @@ export const MainTabNavigator: React.FC = () => {
             color={color}
           />
         ),
-        tabBarActiveTintColor: theme.colors.secondary,
-        tabBarInactiveTintColor: theme.colors.textSecondary,
+        tabBarActiveTintColor: activeLabelColor,
+        tabBarInactiveTintColor: inactiveLabelColor,
         tabBarPressColor: theme.colors.secondary + '20',
         tabBarPressOpacity: 0.8,
         tabBarStyle: [
           styles.tabBar,
           {
-            backgroundColor: theme.colors.surface,
+            backgroundColor: tabBarBackgroundColor,
             borderTopColor: theme.colors.border,
           },
         ],

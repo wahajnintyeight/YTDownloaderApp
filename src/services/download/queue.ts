@@ -5,6 +5,7 @@ export interface DownloadJob {
   bitRate?: string;
   quality?: string;
   videoTitle: string;
+  thumbnailUrl?: string;
   status: 'queued' | 'downloading' | 'completed' | 'error';
   progress: number;
   filePath?: string;

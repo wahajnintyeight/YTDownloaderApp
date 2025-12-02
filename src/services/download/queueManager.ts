@@ -94,7 +94,7 @@ export class ClientDownloadQueue {
           filePath: next.filePath,
           filename: next.filename,
           downloadedAt: next.completedAt,
-          thumbnailUrl: undefined,
+          thumbnailUrl: next.thumbnailUrl,
         });
         console.log(
           `✅ [QUEUE] Successfully saved download to storage: ${next.filename}`,

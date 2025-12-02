@@ -53,7 +53,7 @@ type DownloadAction =
 const buildPlaceholderVideo = (job: DownloadJob): Video => ({
   id: job.videoId,
   title: job.videoTitle || 'Video',
-  thumbnailUrl: '',
+  thumbnailUrl: job.thumbnailUrl || '',
   channelName: '',
   duration: 0,
   formats: [],
@@ -622,6 +622,7 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
       bitRate,
       quality: qualityStr,
       videoTitle: video.title,
+      thumbnailUrl: video.thumbnailUrl,
       status: 'queued',
       progress: 0,
       createdAt: Date.now(),

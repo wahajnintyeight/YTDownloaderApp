@@ -2,8 +2,9 @@ import { StyleSheet } from 'react-native';
 import { Theme } from '../theme';
 import { moderateScale as ms, scale, verticalScale as vs } from '../utils/responsive';
 
-export const getSettingsScreenStyles = (theme: Theme) =>
-  StyleSheet.create({
+export const getSettingsScreenStyles = (theme: Theme) => {
+  const isDark = theme.mode === 'dark';
+  return StyleSheet.create({
     container: {
       flex: 1,
       backgroundColor: theme.colors.background,
@@ -81,7 +82,7 @@ export const getSettingsScreenStyles = (theme: Theme) =>
       fontWeight: '500',
     },
     pathBox: {
-      backgroundColor: theme.colors.background,
+      backgroundColor: isDark ? theme.colors.background : '#F9F9F9',
       borderWidth: 1,
       borderColor: theme.colors.border,
       borderRadius: ms(8),
@@ -115,12 +116,12 @@ export const getSettingsScreenStyles = (theme: Theme) =>
       backgroundColor: theme.colors.secondary, // Use neon red instead of primary
     },
     secondaryButton: {
-      backgroundColor: theme.colors.background,
+      backgroundColor: isDark ? theme.colors.background : '#FFFFFF',
       borderWidth: 1,
       borderColor: theme.colors.secondary, // Use neon red
     },
     tertiaryButton: {
-      backgroundColor: theme.colors.background,
+      backgroundColor: isDark ? theme.colors.background : '#FFFFFF',
       borderWidth: 1,
       borderColor: theme.colors.border,
     },
@@ -132,14 +133,15 @@ export const getSettingsScreenStyles = (theme: Theme) =>
     secondaryButtonText: {
       fontSize: ms(14),
       fontWeight: '600',
+      color: theme.colors.secondary,
     },
     tertiaryButtonText: {
       fontSize: ms(14),
       fontWeight: '600',
-      color: theme.colors.textSecondary,
+      color: isDark ? theme.colors.textSecondary : theme.colors.text,
     },
     infoBox: {
-      backgroundColor: theme.colors.background,
+      backgroundColor: isDark ? theme.colors.background : '#F9F9F9',
       borderLeftWidth: 4,
       borderLeftColor: theme.colors.secondary, // Use neon red
       padding: theme.spacing.md,
@@ -154,3 +156,4 @@ export const getSettingsScreenStyles = (theme: Theme) =>
       lineHeight: ms(20),
     },
   });
+};

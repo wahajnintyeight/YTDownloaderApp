@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../hooks/useTheme';
+import { SunIcon, MoonIcon } from './icons/ModernIcons';
 
 interface AppHeaderProps {
   title?: string;
@@ -82,9 +83,6 @@ const AppHeader: React.FC<AppHeaderProps> = ({
       borderWidth: 1,
       borderColor: theme.colors.border,
     },
-    themeButtonText: {
-      fontSize: 18,
-    },
     brandContainer: {
       alignItems: 'center',
     },
@@ -118,15 +116,18 @@ const AppHeader: React.FC<AppHeaderProps> = ({
           </View>
           
           <View style={styles.rightSection}>
-            {showThemeToggle && (
+            {/* Theme toggle hidden temporarily due to color inconsistencies */}
+            {false && showThemeToggle && (
               <TouchableOpacity
                 style={styles.themeButton}
                 onPress={handleThemeToggle}
                 activeOpacity={0.7}
               >
-                <Text style={styles.themeButtonText}>
-                  {isDark ? '☀️' : '🌙'}
-                </Text>
+                {isDark ? (
+                  <SunIcon size={20} color="#A0A0A0" strokeWidth={2} />
+                ) : (
+                  <MoonIcon size={20} color="#A0A0A0" strokeWidth={2} />
+                )}
               </TouchableOpacity>
             )}
           </View>

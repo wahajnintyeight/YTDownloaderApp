@@ -10,6 +10,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useDownloadManager } from '../hooks/useDownloadManager';
+import { useTheme } from '../hooks/useTheme';
 import { DownloadedVideo } from '../services/storageService';
 
 interface DownloadedVideosListProps {
@@ -19,6 +20,7 @@ interface DownloadedVideosListProps {
 export const DownloadedVideosList: React.FC<DownloadedVideosListProps> = ({
   onVideoPress,
 }) => {
+  const { theme } = useTheme();
   const { downloadedVideos, loadingVideos, refreshDownloadList, removeDownloadedVideo } =
     useDownloadManager();
 
@@ -54,6 +56,8 @@ export const DownloadedVideosList: React.FC<DownloadedVideosListProps> = ({
       minute: '2-digit',
     });
   };
+
+  const styles = getStyles(theme);
 
   const renderVideoItem = ({ item }: { item: DownloadedVideo }) => (
     <TouchableOpacity
@@ -94,9 +98,10 @@ export const DownloadedVideosList: React.FC<DownloadedVideosListProps> = ({
   );
 
   if (loadingVideos && downloadedVideos.length === 0) {
+    const styles = getStyles(theme);
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2196F3" />
+        <ActivityIndicator size="large" color={theme.colors.primary} />
         <Text style={styles.loadingText}>Loading downloads...</Text>
       </View>
     );
@@ -112,7 +117,7 @@ export const DownloadedVideosList: React.FC<DownloadedVideosListProps> = ({
         <RefreshControl
           refreshing={loadingVideos}
           onRefresh={refreshDownloadList}
-          tintColor="#2196F3"
+          tintColor={theme.colors.primary}
         />
       }
       contentContainerStyle={styles.listContainer}
@@ -121,13 +126,13 @@ export const DownloadedVideosList: React.FC<DownloadedVideosListProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const getStyles = (theme: any) => StyleSheet.create({
   listContainer: {
     padding: 12,
     flexGrow: 1,
   },
   videoCard: {
-    backgroundColor: '#fff',
+    backgroundColor: theme.colors.surface,
     borderRadius: 8,
     marginBottom: 12,
     overflow: 'hidden',
@@ -149,30 +154,30 @@ const styles = StyleSheet.create({
   videoTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: theme.colors.text,
     marginBottom: 4,
   },
   videoMeta: {
     fontSize: 12,
-    color: '#999',
+    color: theme.colors.textSecondary,
     marginBottom: 4,
   },
   videoPath: {
     fontSize: 11,
-    color: '#666',
+    color: theme.colors.textSecondary,
     fontFamily: 'monospace',
   },
   removeButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#ffebee',
+    backgroundColor: theme.colors.error + '20',
     justifyContent: 'center',
     alignItems: 'center',
   },
   removeButtonText: {
     fontSize: 18,
-    color: '#f44336',
+    color: theme.colors.error,
     fontWeight: 'bold',
   },
   loadingContainer: {
@@ -183,7 +188,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 14,
-    color: '#666',
+    color: theme.colors.textSecondary,
   },
   emptyContainer: {
     flex: 1,
@@ -198,11 +203,11 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
+    color: theme.colors.text,
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 14,
-    color: '#999',
+    color: theme.colors.textSecondary,
   },
 });
