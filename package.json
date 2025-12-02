@@ -10,7 +10,9 @@
     "start:reset": "react-native start --reset-cache",
     "logs": "adb logcat | grep -E 'ReactNativeJS'",
     "logs:clear": "adb logcat -c && adb logcat | grep -E 'ReactNativeJS|chromium'",
-    "test": "jest"
+    "test": "jest",
+    "build:apk": "cd android && gradlew assembleRelease && cd .. && adb install -r android/app/build/outputs/apk/release/app-release.apk",
+    "build:apk-only": "cd android && gradlew assembleRelease"
   },
   "dependencies": {
     "@notifee/react-native": "^9.1.8",
