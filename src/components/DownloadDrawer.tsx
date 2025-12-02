@@ -12,9 +12,10 @@ import {
   TouchableOpacity,
   Image,
   Animated,
-  Dimensions,
+  useWindowDimensions,
   PanResponder,
   Easing,
+  ScrollView,
 } from 'react-native';
 import { Video, VideoFormat, VideoQuality } from '../types/video';
 import { useTheme } from '../hooks/useTheme';
@@ -47,7 +48,13 @@ const SECONDARY_QUALITIES: VideoQuality[] = [
   'audio_only',
 ];
 const BITRATE_OPTIONS = ['128k', '192k', '256k', '320k'];
-const DRAWER_HEIGHT = Dimensions.get('window').height * 0.85;
+
+// <CHANGE> Responsive drawer height based on screen dimensions
+const getDrawerHeight = (screenHeight: number, screenWidth: number): number => {
+  const isLandscape = screenWidth > screenHeight;
+  if (isLandscape) return screenHeight * 0.95;
+  return screenHeight * 0.85;
+};
 
 const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
   visible,
@@ -59,6 +66,13 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
   const { showSuccess, showError } = useDialog();
   const { downloadLocation, setDownloadLocation, isLocationSet } =
     useSettings();
+
+  // <CHANGE> Use useWindowDimensions for responsive sizing
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+  const isSmallScreen = width < 380;
+  const isLargeScreen = width > 500;
+  const DRAWER_HEIGHT = getDrawerHeight(height, width);
 
   const [selectedFormat, setSelectedFormat] = useState<VideoFormat>('mp4');
   const [selectedQuality, setSelectedQuality] = useState<VideoQuality>('720p');
@@ -211,7 +225,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
           }
         },
       }),
-    [translateY, backdropOpacity, dragHandleScale, onClose],
+    [translateY, backdropOpacity, dragHandleScale, onClose, DRAWER_HEIGHT],
   );
 
   const handleDownload = useCallback(async () => {
@@ -284,7 +298,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
         useNativeDriver: true,
       }),
     ]).start(() => onClose());
-  }, [onClose, translateY, backdropOpacity]);
+  }, [onClose, translateY, backdropOpacity, DRAWER_HEIGHT]);
 
   const handleLocationSelect = useCallback(
     async (path: string) => {
@@ -319,7 +333,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
   const isAudioFormat = selectedFormat === 'mp3';
   const shouldShowQualitySelector = !isAudioFormat;
 
-  // Helper button component
+  // <CHANGE> Responsive option button component
   const OptionButton: React.FC<{
     label: string;
     isSelected: boolean;
@@ -335,6 +349,8 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
           borderColor: isSelected
             ? theme.colors.secondary
             : theme.colors.border,
+          paddingVertical: isSmallScreen ? 8 : 10,
+          paddingHorizontal: isSmallScreen ? 10 : 14,
         },
       ]}
       onPress={onPress}
@@ -349,6 +365,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
                 : '#FFFFFF'
               : theme.colors.text,
             fontWeight: isSelected ? '600' : '400',
+            fontSize: isSmallScreen ? 12 : 14,
           },
         ]}
       >
@@ -357,7 +374,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
     </TouchableOpacity>
   );
 
-  // Selector section component
+  // <CHANGE> Responsive selector section component
   const SelectorSection: React.FC<{
     title: string;
     options: string[];
@@ -375,9 +392,9 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
     expanded,
     onToggleExpand,
   }) => (
-      <View style={selectorStyles.container}>
+      <View style={[selectorStyles.container, { marginBottom: isSmallScreen ? 12 : 16 }]}>
         <View style={selectorStyles.header}>
-          <Text style={[selectorStyles.title, { color: theme.colors.text }]}>
+          <Text style={[selectorStyles.title, { color: theme.colors.text, fontSize: isSmallScreen ? 14 : 16 }]}>
             {title}
           </Text>
           {showExpand && (
@@ -388,7 +405,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
               <Text
                 style={[
                   selectorStyles.expandText,
-                  { color: theme.colors.secondary },
+                  { color: theme.colors.secondary, fontSize: isSmallScreen ? 11 : 13 },
                 ]}
               >
                 {expanded ? 'Show Less' : `+${options.length - 3} More`}
@@ -396,7 +413,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
             </TouchableOpacity>
           )}
         </View>
-        <View style={selectorStyles.options}>
+        <View style={[selectorStyles.options, { gap: isSmallScreen ? 8 : 10 }]}>
           {options.map(option => (
             <OptionButton
               key={option}
@@ -447,6 +464,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
             style={[
               drawerStyles.drawerContainer,
               { transform: [{ translateY }] },
+              { maxHeight: DRAWER_HEIGHT },
             ]}
             {...panResponder.panHandlers}
           >
@@ -454,25 +472,31 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
               style={[
                 drawerStyles.dragHandle,
                 { transform: [{ scaleX: dragHandleScale }] },
+                { marginTop: isSmallScreen ? 6 : 8 },
               ]}
             />
 
-            <View style={drawerStyles.header}>
-              <Text style={drawerStyles.headerTitle}>Download Video</Text>
+            <View style={[drawerStyles.header, { paddingHorizontal: isSmallScreen ? 16 : 20, paddingVertical: isSmallScreen ? 12 : 16 }]}>
+              <Text style={[drawerStyles.headerTitle, { fontSize: isSmallScreen ? 18 : 20 }]}>Download Video</Text>
             </View>
 
-            <View style={drawerStyles.content}>
-              <View style={drawerStyles.videoInfo}>
+            <ScrollView
+              style={drawerStyles.content}
+              showsVerticalScrollIndicator={false}
+              scrollEnabled={!isLandscape || height < 500}
+              contentContainerStyle={[{ paddingHorizontal: isSmallScreen ? 16 : 20, paddingBottom: isSmallScreen ? 12 : 16 }]}
+            >
+              <View style={[drawerStyles.videoInfo, { marginBottom: isSmallScreen ? 16 : 20, height: isSmallScreen ? 80 : 100 }]}>
                 <Image
                   source={{ uri: video.thumbnailUrl }}
-                  style={drawerStyles.thumbnail}
+                  style={[drawerStyles.thumbnail, { height: isSmallScreen ? 80 : 100, width: isSmallScreen ? 140 : 180 }]}
                   resizeMode="cover"
                 />
-                <View style={drawerStyles.videoDetails}>
-                  <Text style={drawerStyles.videoTitle} numberOfLines={2}>
+                <View style={[drawerStyles.videoDetails, { marginLeft: isSmallScreen ? 8 : 12 }]}>
+                  <Text style={[drawerStyles.videoTitle, { fontSize: isSmallScreen ? 13 : 15 }]} numberOfLines={2}>
                     {video.title}
                   </Text>
-                  <Text style={drawerStyles.videoChannel}>
+                  <Text style={[drawerStyles.videoChannel, { fontSize: isSmallScreen ? 11 : 13 }]} numberOfLines={1}>
                     {video.channelName}
                   </Text>
                 </View>
@@ -516,14 +540,14 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
                 />
               )}
 
-              <View style={drawerStyles.bottomSection}>
+              <View style={[drawerStyles.bottomSection, { marginTop: isSmallScreen ? 8 : 12 }]}>
                 {isDownloading ? (
                   <View style={drawerStyles.loadingContainer}>
                     <LoadingAnimation type="download" visible={true} />
                     <Text
                       style={[
                         drawerStyles.loadingText,
-                        { color: theme.colors.textSecondary },
+                        { color: theme.colors.textSecondary, fontSize: isSmallScreen ? 14 : 16 },
                       ]}
                     >
                       Adding to queue...
@@ -533,23 +557,23 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
                   <TouchableOpacity
                     style={[
                       drawerStyles.downloadButton,
-                      { backgroundColor: theme.colors.secondary },
+                      { backgroundColor: theme.colors.secondary, paddingVertical: isSmallScreen ? 12 : 14 },
                     ]}
                     onPress={handleDownload}
                     disabled={isDownloading}
                   >
-                    <Text style={drawerStyles.downloadButtonText}>
+                    <Text style={[drawerStyles.downloadButtonText, { fontSize: isSmallScreen ? 14 : 16 }]}>
                       {`Download ${selectedFormat.toUpperCase()} - ${isAudioFormat
-                          ? selectedBitrate.toUpperCase()
-                          : selectedQuality === 'audio_only'
-                            ? 'Audio Only'
-                            : selectedQuality.toUpperCase()
+                        ? selectedBitrate.toUpperCase()
+                        : selectedQuality === 'audio_only'
+                          ? 'Audio Only'
+                          : selectedQuality.toUpperCase()
                         }`}
                     </Text>
                   </TouchableOpacity>
                 )}
               </View>
-            </View>
+            </ScrollView>
           </Animated.View>
         </View>
       </Modal>

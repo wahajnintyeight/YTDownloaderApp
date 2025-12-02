@@ -8,14 +8,14 @@ import {
   ListRenderItem,
   TouchableOpacity,
   TextInput,
-  Pressable,
+  Alert,
 } from 'react-native';
-import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
+import { useRoute, RouteProp } from '@react-navigation/native';
+import { Search, Link as LinkIcon, Download, Youtube, ArrowRight } from 'lucide-react-native';
+import LinearGradient from 'react-native-linear-gradient';
 import { Video } from '../types/video';
 import { useTheme } from '../hooks/useTheme';
 import { useSearch } from '../hooks/useSearch';
-import { useDialog } from '../hooks/useDialog';
-import SearchBar from '../components/SearchBar';
 import VideoResultCard from '../components/VideoResultCard';
 import LoadingAnimation from '../components/LoadingAnimation';
 import DownloadDrawer from '../components/DownloadDrawer';
@@ -25,85 +25,55 @@ import { MainTabParamList } from '../navigation/types';
 type BrowseScreenRouteProp = RouteProp<MainTabParamList, 'Browse'>;
 
 const BrowseScreen: React.FC = () => {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const route = useRoute<BrowseScreenRouteProp>();
-  const navigation = useNavigation<any>();
   const { results, loading, error, hasMore, search, loadMore } = useSearch();
-  const { showSuccess } = useDialog();
-  const [searchQuery, setSearchQuery] = useState('');
+
   const [mode, setMode] = useState<'search' | 'url'>('search');
+  const [searchQuery, setSearchQuery] = useState('');
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [selectedVideo, setSelectedVideo] = useState<Video | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
 
-  // DRY: Reusable search handler
-  const handleSearch = useCallback(
-    async (query: string) => {
-      console.log('🔍 Search initiated:', query);
-      setSearchQuery(query);
-      await search(query, true);
-    },
-    [search],
-  );
+  const handleSearch = useCallback(async (query: string) => {
+    setSearchQuery(query);
+    await search(query, true);
+  }, [search]);
 
-  // Handle test search trigger from navigation params (DRY: reuse existing search)
+  // Initialize search from params if needed
   useEffect(() => {
-    const params = route.params;
-    if (params?.testSearch) {
-      const testQuery = 'test'; // Any query works when USE_TEST_DATA is enabled
-      handleSearch(testQuery);
+    if (route.params?.testSearch) {
+      handleSearch('test');
     }
   }, [route.params, handleSearch]);
 
-  const handleVideoPress = useCallback(
-    (video: Video) => {
-      console.log('📹 Video selected:', video.title);
-      const viewerUrl = `https://www.youtube.com/watch?v=${video.id}`;
-      navigation.navigate('VideoViewer', { video, youtubeUrl: viewerUrl });
-    },
-    [navigation],
-  );
-
-  const handleCloseModal = useCallback(() => {
-    setModalVisible(false);
-    setSelectedVideo(null);
+  const handleVideoPress = useCallback((video: Video) => {
+    setSelectedVideo(video);
+    setModalVisible(true);
   }, []);
 
   const extractVideoIdFromInput = useCallback((input: string): string | null => {
     const trimmed = input.trim();
     const vMatch = trimmed.match(/[?&]v=([^&]+)/);
-    if (vMatch && vMatch[1]) {
-      return vMatch[1];
-    }
+    if (vMatch && vMatch[1]) return vMatch[1];
     const shortMatch = trimmed.match(/youtu\.be\/([^?&]+)/);
-    if (shortMatch && shortMatch[1]) {
-      return shortMatch[1];
-    }
+    if (shortMatch && shortMatch[1]) return shortMatch[1];
     const shortsMatch = trimmed.match(/shorts\/([^?&]+)/);
-    if (shortsMatch && shortsMatch[1]) {
-      return shortsMatch[1];
-    }
-    if (trimmed.length === 11 && !trimmed.includes('http')) {
-      return trimmed;
-    }
+    if (shortsMatch && shortsMatch[1]) return shortsMatch[1];
+    if (trimmed.length === 11 && !trimmed.includes('http')) return trimmed;
     return null;
   }, []);
 
   const handleUrlDownload = useCallback(() => {
     const value = youtubeUrl.trim();
-    if (!value) {
-      return;
-    }
+    if (!value) return;
+
     const videoId = extractVideoIdFromInput(value);
     if (!videoId) {
-      showSuccess(
-        'Invalid URL',
-        'Please enter a valid YouTube URL or video ID.',
-      );
+      Alert.alert('Invalid URL', 'Please enter a valid YouTube URL or video ID.');
       return;
     }
 
-    const now = new Date().toISOString();
     const video: Video = {
       id: videoId,
       title: value,
@@ -111,457 +81,281 @@ const BrowseScreen: React.FC = () => {
       duration: 0,
       channelName: '',
       channelId: '',
-      publishedAt: now,
+      publishedAt: new Date().toISOString(),
       viewCount: 0,
     };
 
     setSelectedVideo(video);
     setModalVisible(true);
-  }, [youtubeUrl, extractVideoIdFromInput, showSuccess]);
-
-  const handleTestDownload = useCallback(() => {
-    // Create a test video object with the specified video ID
-    const testVideo: Video = {
-      id: 't9c2X-Dzijg',
-      title: 'Test Video - Sample Download',
-      thumbnailUrl: 'https://img.youtube.com/vi/GT8ornYrDEs/mqdefault.jpg',
-      duration: 240, // 4 minutes
-      channelName: 'Test Channel',
-      channelId: 'test-channel-id',
-      publishedAt: new Date().toISOString(),
-      viewCount: 1000000,
-    };
-
-    setSelectedVideo(testVideo);
-    setModalVisible(true);
-  }, []);
-
-  const handleRefresh = useCallback(() => {
-    if (searchQuery.trim()) {
-      search(searchQuery, true);
-    }
-  }, [search, searchQuery]);
-
-  const handleLoadMore = useCallback(() => {
-    if (hasMore && !loading) {
-      loadMore();
-    }
-  }, [hasMore, loading, loadMore]);
+  }, [youtubeUrl, extractVideoIdFromInput]);
 
   const renderVideoItem: ListRenderItem<Video> = useCallback(
     ({ item }) => <VideoResultCard video={item} onPress={handleVideoPress} />,
     [handleVideoPress],
   );
 
-  const renderEmptyState = () => {
-    if (loading) {
-      return (
-        <View style={styles.centerContainer}>
-          <LoadingAnimation type="search" visible={true} />
-          <Text
-            style={[styles.emptyText, { color: theme.colors.textSecondary }]}
-          >
-            Searching videos...
+  const renderEmptyState = () => (
+    <View style={styles.emptyContainer}>
+      {loading ? (
+        <LoadingAnimation type="search" visible={true} />
+      ) : error ? (
+        <View style={{ alignItems: 'center' }}>
+          <Text style={[styles.errorText, { color: theme.colors.error }]}>{error}</Text>
+          <Text style={{ color: theme.colors.textSecondary, marginTop: 8 }}>Pull to retry</Text>
+        </View>
+      ) : (
+        <View style={{ alignItems: 'center', opacity: 0.7 }}>
+          <Youtube size={64} color={theme.colors.textSecondary} strokeWidth={1} />
+          <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
+            {mode === 'search' ? 'Search YouTube' : 'Paste a Link'}
+          </Text>
+          <Text style={[styles.emptySubtext, { color: theme.colors.textSecondary }]}>
+            {mode === 'search'
+              ? 'Find videos to download'
+              : 'Paste a YouTube URL to download directly'}
           </Text>
         </View>
-      );
-    }
+      )}
+    </View>
+  );
 
-    if (error) {
-      return (
-        <View style={styles.centerContainer}>
-          <Text style={[styles.errorText, { color: theme.colors.error }]}>
-            {error}
-          </Text>
-          <Text
-            style={[styles.retryText, { color: theme.colors.textSecondary }]}
-          >
-            Pull down to retry
-          </Text>
-        </View>
-      );
-    }
-
-    if (searchQuery && results.length === 0) {
-      return (
-        <View style={styles.centerContainer}>
-          <Text
-            style={[styles.emptyText, { color: theme.colors.textSecondary }]}
-          >
-            No videos found for "{searchQuery}"
-          </Text>
-          <Text
-            style={[styles.emptySubtext, { color: theme.colors.textSecondary }]}
-          >
-            Try a different search term
-          </Text>
-        </View>
-      );
-    }
-
-    return (
-      <View style={styles.centerContainer}>
-        <Text style={[styles.welcomeText, { color: theme.colors.text }]}>
-          Welcome to YT Downloader
-        </Text>
-        <Text
-          style={[styles.welcomeSubtext, { color: theme.colors.textSecondary }]}
-        >
-          Search for YouTube videos to download
-        </Text>
-
-        {/* Temporary test button for dialogs */}
-        <View style={styles.testButtonsContainer}>
-          <TouchableOpacity
-            style={[
-              styles.testButton,
-              { backgroundColor: theme.colors.primary },
-            ]}
-            onPress={() =>
-              showSuccess(
-                'Welcome!',
-                'Custom dialog system is working perfectly!',
-              )
-            }
-          >
-            <Text style={styles.testButtonText}>Test Dialog</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.testButton,
-              {
-                backgroundColor: theme.colors.secondary,
-                marginTop: theme.spacing.sm,
-              },
-            ]}
-            onPress={handleTestDownload}
-          >
-            <Text style={styles.testButtonText}>Test Download</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  };
-
-  const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: theme.colors.background,
-    },
-    searchSection: {
-      paddingHorizontal: theme.spacing.lg,
-      paddingVertical: theme.spacing.md,
-      backgroundColor: theme.colors.background,
-      borderBottomWidth: 1,
-      borderBottomColor: theme.colors.border,
-    },
-    modeHeader: {
-      marginBottom: theme.spacing.sm,
-    },
-    modeTitle: {
-      fontSize: 16,
-      fontWeight: '600',
-      marginBottom: theme.spacing.xs,
-    },
-    modeSubtitle: {
-      fontSize: 13,
-      color: theme.colors.textSecondary,
-    },
-    modeToggle: {
-      flexDirection: 'row',
-      marginBottom: theme.spacing.sm,
-      borderRadius: 999,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      overflow: 'hidden',
-    },
-    modeButton: {
-      flex: 1,
-      paddingVertical: theme.spacing.sm,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    modeButtonActive: {
-      backgroundColor: theme.colors.secondary,
-    },
-    modeButtonText: {
-      fontSize: 14,
-      fontWeight: '500',
-      color: theme.colors.textSecondary,
-    },
-    modeButtonTextActive: {
-      color: theme.colors.text,
-    },
-    urlInputContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginTop: theme.spacing.sm,
-    },
-    urlInput: {
-      flex: 1,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      borderRadius: 8,
-      paddingHorizontal: theme.spacing.md,
-      paddingVertical: theme.spacing.sm,
-      color: theme.colors.text,
-      backgroundColor: theme.colors.surface,
-      fontSize: 16,
-      minHeight: 44,
-    },
-    urlButton: {
-      marginTop: theme.spacing.md,
-      paddingVertical: theme.spacing.md,
-      borderRadius: 999,
-      backgroundColor: theme.colors.primary,
-      alignItems: 'center',
-      justifyContent: 'center',
-      alignSelf: 'stretch',
-    },
-    urlButtonText: {
-      color: '#FFFFFF',
-      fontSize: 14,
-      fontWeight: '600',
-    },
-    urlButtonPressed: {
-      opacity: 0.9,
-      transform: [{ scale: 0.97 }],
-    },
-    urlCard: {
-      marginTop: theme.spacing.sm,
-      paddingHorizontal: theme.spacing.md,
-      paddingVertical: theme.spacing.md,
-      borderRadius: 12,
-      backgroundColor: theme.colors.surface,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-    },
-    urlLabel: {
-      fontSize: 13,
-      fontWeight: '500',
-      marginBottom: theme.spacing.xs,
-    },
-    urlHelperText: {
-      marginTop: theme.spacing.sm,
-      fontSize: 12,
-      color: theme.colors.textSecondary,
-    },
-    listContainer: {
-      flex: 1,
-    },
-    centerContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      paddingHorizontal: theme.spacing.xl,
-      paddingVertical: theme.spacing.xxl,
-    },
-    welcomeText: {
-      fontSize: 20,
-      fontWeight: '600',
-      textAlign: 'center',
-      marginBottom: theme.spacing.sm,
-    },
-    welcomeSubtext: {
-      fontSize: 16,
-      textAlign: 'center',
-      lineHeight: 24,
-    },
-    emptyText: {
-      fontSize: 18,
-      fontWeight: '600',
-      textAlign: 'center',
-      marginBottom: theme.spacing.sm,
-    },
-    emptySubtext: {
-      fontSize: 14,
-      textAlign: 'center',
-    },
-    errorText: {
-      fontSize: 16,
-      fontWeight: '600',
-      textAlign: 'center',
-      marginBottom: theme.spacing.sm,
-    },
-    retryText: {
-      fontSize: 14,
-      textAlign: 'center',
-    },
-    listContent: {
-      paddingVertical: theme.spacing.sm,
-    },
-    listFooter: {
-      paddingVertical: 20,
-    },
-    testButtonsContainer: {
-      marginTop: theme.spacing.lg,
-      width: '100%',
-      alignItems: 'center',
-    },
-    testButton: {
-      paddingVertical: theme.spacing.md,
-      paddingHorizontal: theme.spacing.lg,
-      borderRadius: 8,
-      minWidth: 150,
-      alignItems: 'center',
-    },
-    testButtonText: {
-      color: '#FFFFFF',
-      fontSize: 16,
-      fontWeight: '600',
-    },
-  });
+  const styles = getStyles(theme, isDark);
 
   return (
     <View style={styles.container}>
       <AppHeader />
 
-      <View style={styles.searchSection}>
-        <View style={styles.modeHeader}>
-          <Text style={[styles.modeTitle, { color: theme.colors.text }]}>
-            {mode === 'search' ? 'Search videos on YouTube' : 'Download using a YouTube link'}
-          </Text>
-          <Text style={styles.modeSubtitle}>
-            {mode === 'search'
-              ? 'Type a song, channel, or keyword and pick from the results below.'
-              : 'Paste a full YouTube URL or video ID for a specific, public video.'}
-          </Text>
-        </View>
-
-        <View style={styles.modeToggle}>
+      <View style={styles.content}>
+        <View style={styles.tabContainer}>
           <TouchableOpacity
-            style={[
-              styles.modeButton,
-              mode === 'search' && styles.modeButtonActive,
-            ]}
+            style={[styles.tab, mode === 'search' && styles.activeTab]}
             onPress={() => setMode('search')}
+            activeOpacity={0.7}
           >
-            <Text
-              style={[
-                styles.modeButtonText,
-                mode === 'search' && styles.modeButtonTextActive,
-              ]}
-            >
-              Search
-            </Text>
+            <Search size={18} color={mode === 'search' ? theme.colors.background : theme.colors.textSecondary} />
+            <Text style={[styles.tabText, mode === 'search' && styles.activeTabText]}>Search</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[
-              styles.modeButton,
-              mode === 'url' && styles.modeButtonActive,
-            ]}
+            style={[styles.tab, mode === 'url' && styles.activeTab]}
             onPress={() => setMode('url')}
+            activeOpacity={0.7}
           >
-            <Text
-              style={[
-                styles.modeButtonText,
-                mode === 'url' && styles.modeButtonTextActive,
-              ]}
-            >
-              URL
-            </Text>
+            <LinkIcon size={18} color={mode === 'url' ? theme.colors.background : theme.colors.textSecondary} />
+            <Text style={[styles.tabText, mode === 'url' && styles.activeTabText]}>Paste URL</Text>
           </TouchableOpacity>
         </View>
 
         {mode === 'search' ? (
-          <SearchBar
-            onSearch={handleSearch}
-            placeholder="Search YouTube videos"
-            showSearchButton={true}
-          />
-        ) : (
-          <View style={styles.urlCard}>
-            <Text
-              style={[
-                styles.urlLabel,
-                { color: theme.colors.textSecondary },
-              ]}
-            >
-              YouTube URL or ID
-            </Text>
-
-            <View style={styles.urlInputContainer}>
+          <View style={styles.searchSection}>
+            <View style={styles.inputWrapper}>
+              <Search size={20} color={theme.colors.textSecondary} />
               <TextInput
-                style={styles.urlInput}
-                placeholder="Paste YouTube URL or ID"
+                style={styles.input}
+                placeholder="Search videos..."
                 placeholderTextColor={theme.colors.textSecondary}
-                value={youtubeUrl}
-                onChangeText={setYoutubeUrl}
-                autoCapitalize="none"
-                autoCorrect={false}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                onSubmitEditing={() => handleSearch(searchQuery)}
+                returnKeyType="search"
               />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => handleSearch(searchQuery)} style={styles.goButton}>
+                  <ArrowRight size={20} color={theme.colors.primary} />
+                </TouchableOpacity>
+              )}
             </View>
 
-            <Pressable
-              style={({ pressed }) => [
-                styles.urlButton,
-                pressed && styles.urlButtonPressed,
-              ]}
-              android_ripple={{ color: theme.colors.accent }}
-              onPress={handleUrlDownload}
-            >
-              <Text style={styles.urlButtonText}>Download from URL</Text>
-            </Pressable>
-
-            <Text style={styles.urlHelperText}>
-              Examples: https://youtube.com/watch?v=..., https://youtu.be/..., or
-              just the 11-character video ID.
-            </Text>
-          </View>
-        )}
-      </View>
-
-      <View style={styles.listContainer}>
-        {mode === 'search' ? (
-          results.length > 0 ? (
             <FlatList
               data={results}
               renderItem={renderVideoItem}
               keyExtractor={(item, index) => `${item.id}-${index}`}
               contentContainerStyle={styles.listContent}
+              ListEmptyComponent={renderEmptyState}
               refreshControl={
                 <RefreshControl
                   refreshing={loading}
-                  onRefresh={handleRefresh}
-                  colors={[theme.colors.primary]}
+                  onRefresh={() => handleSearch(searchQuery)}
                   tintColor={theme.colors.primary}
                 />
               }
-              // Performance optimizations
-              windowSize={10}
-              maxToRenderPerBatch={5}
-              initialNumToRender={10}
-              removeClippedSubviews={true}
-              onEndReached={handleLoadMore}
-              onEndReachedThreshold={0.5}
-              ListFooterComponent={
-                hasMore && loading ? (
-                  <View style={styles.listFooter}>
-                    <LoadingAnimation
-                      type="general"
-                      visible={true}
-                      size="small"
-                    />
-                  </View>
-                ) : null
-              }
+              onEndReached={() => {
+                if (hasMore && !loading) loadMore();
+              }}
             />
-          ) : (
-            renderEmptyState()
-          )
+          </View>
         ) : (
-          renderEmptyState()
+          <View style={styles.urlSection}>
+            <LinearGradient
+              colors={isDark ? ['#2A2A2A', '#1A1A1A'] : ['#F0F0F0', '#FFFFFF']}
+              style={styles.urlCard}
+            >
+              <Text style={styles.urlTitle}>Direct Download</Text>
+              <Text style={styles.urlSubtitle}>Paste a YouTube link below</Text>
+
+              <View style={[styles.inputWrapper, { marginTop: 24 }]}>
+                <LinkIcon size={20} color={theme.colors.textSecondary} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="https://youtu.be/..."
+                  placeholderTextColor={theme.colors.textSecondary}
+                  value={youtubeUrl}
+                  onChangeText={setYoutubeUrl}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={styles.downloadButton}
+                onPress={handleUrlDownload}
+                activeOpacity={0.8}
+              >
+                <LinearGradient
+                  colors={[theme.colors.primary, theme.colors.secondary]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.gradientButton}
+                >
+                  <Download size={20} color="#FFF" />
+                  <Text style={styles.downloadButtonText}>Download Video</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </LinearGradient>
+          </View>
         )}
       </View>
 
       <DownloadDrawer
         visible={modalVisible}
         video={selectedVideo}
-        onClose={handleCloseModal}
+        onClose={() => setModalVisible(false)}
       />
     </View>
   );
 };
+
+const getStyles = (theme: any, isDark: boolean) => StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
+  content: {
+    flex: 1,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    padding: 16,
+    gap: 12,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: theme.colors.surface,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  activeTab: {
+    backgroundColor: theme.colors.text,
+    borderColor: theme.colors.text,
+  },
+  tabText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: theme.colors.textSecondary,
+  },
+  activeTabText: {
+    color: theme.colors.background,
+  },
+  searchSection: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  urlSection: {
+    flex: 1,
+    padding: 16,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 52,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    gap: 12,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
+    color: theme.colors.text,
+    height: '100%',
+  },
+  goButton: {
+    padding: 4,
+  },
+  listContent: {
+    paddingTop: 16,
+    paddingBottom: 100,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 100,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  errorText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  urlCard: {
+    padding: 24,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  urlTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: theme.colors.text,
+    marginBottom: 8,
+  },
+  urlSubtitle: {
+    fontSize: 16,
+    color: theme.colors.textSecondary,
+  },
+  downloadButton: {
+    marginTop: 24,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  gradientButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    gap: 8,
+  },
+  downloadButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});
 
 export default BrowseScreen;
