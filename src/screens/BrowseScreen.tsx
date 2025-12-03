@@ -159,8 +159,12 @@ const BrowseScreen: React.FC = () => {
                 returnKeyType="search"
               />
               {searchQuery.length > 0 && (
-                <TouchableOpacity onPress={() => handleSearch(searchQuery)} style={styles.goButton}>
-                  <ArrowRight size={20} color={theme.colors.primary} />
+                <TouchableOpacity
+                  onPress={() => handleSearch(searchQuery)}
+                  style={styles.goButton}
+                  activeOpacity={0.8}
+                >
+                  <ArrowRight size={22} color={theme.colors.background} />
                 </TouchableOpacity>
               )}
             </View>
@@ -173,7 +177,7 @@ const BrowseScreen: React.FC = () => {
               ListEmptyComponent={renderEmptyState}
               refreshControl={
                 <RefreshControl
-                  refreshing={loading}
+                  refreshing={loading && results.length > 0}
                   onRefresh={() => handleSearch(searchQuery)}
                   tintColor={theme.colors.primary}
                 />
@@ -297,7 +301,12 @@ const getStyles = (theme: any, isDark: boolean) => StyleSheet.create({
     height: '100%',
   },
   goButton: {
-    padding: 4,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   listContent: {
     paddingTop: 16,

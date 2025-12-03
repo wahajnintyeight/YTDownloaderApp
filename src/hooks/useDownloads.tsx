@@ -577,7 +577,7 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
           dismissible: true,
         });
       }
-    }, 5000);
+    }, 25000);
 
     stallTimersRef.current.set(id, interval);
   };
