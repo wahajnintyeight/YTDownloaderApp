@@ -1,4 +1,33 @@
 {
   "name": "YTDownloaderApp",
-  "displayName": "YTDownloaderApp"
+  "displayName": "YTDownloaderApp",
+  "expo": {
+    "name": "YTDownloaderApp",
+    "slug": "ytdownloaderapp",
+    "version": "0.0.1",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "updates": {
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 30000,
+      "url": "https://u.expo.dev/462cb572-5af9-4dbf-82df-bb730cf136e5"
+    },
+    "runtimeVersion": "0.82.0",
+    "plugins": [
+      [
+        "expo-updates",
+        {
+          "username": "wahaj_98"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "462cb572-5af9-4dbf-82df-bb730cf136e5"
+      }
+    },
+    "owner": "wahaj_98"
+  }
 }
