@@ -1,6 +1,8 @@
 export interface DownloadJob {
   id: string;
   videoId: string;
+  // 🔧 NEW: Force specific download method for this job
+  forceMethod?: 'sse' | 'direct-stream';
   format: 'mp3' | 'mp4' | 'webm';
   bitRate?: string;
   quality?: string;

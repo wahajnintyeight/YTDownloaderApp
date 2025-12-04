@@ -13,7 +13,7 @@ import type { DownloadJob } from './download/queue';
 // API endpoint
 const BASE_URL = `${API_BASE_URL}/v2/api`;
 const USE_MOCK_DATA = false; // Using real API now
-const USE_TEST_DATA = false; // Use test data for load testing
+const USE_TEST_DATA = true; // Use test data for load testing
 
 class ApiClient {
   private client: AxiosInstance;
@@ -117,7 +117,7 @@ class ApiClient {
     // Try to extract view count from description
     const viewMatch = description?.match(/(\d+(?:,\d+)*)\s*views?/i);
     if (viewMatch) {
-      return parseInt(viewMatch[1].replace(/,/g, ''));
+      return parseInt(viewMatch[1].replace(/,/g, ''), 10);
     }
     // Return a random view count for demo purposes
     return Math.floor(Math.random() * 10000000) + 1000;
@@ -340,6 +340,8 @@ class ApiClient {
       onComplete?: (filePath: string, filename: string) => void;
       onError?: (error: string) => void;
       localDownloadId?: string;
+      // 🔧 NEW: Force specific download method for this download
+      forceMethod?: 'sse' | 'direct-stream';
     },
   ): Promise<string> {
     const id = options?.localDownloadId || `${Date.now()}`;
@@ -353,6 +355,8 @@ class ApiClient {
       status: 'queued',
       progress: 0,
       createdAt: Date.now(),
+      // Pass force method option
+      forceMethod: options?.forceMethod,
     };
 
     return clientDownloadQueue.enqueueWithCallbacks(job, {

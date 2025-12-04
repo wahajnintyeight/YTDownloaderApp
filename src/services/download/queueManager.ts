@@ -65,14 +65,14 @@ export class ClientDownloadQueue {
     next.progress = 0;
     this.notifyListeners();
     
-    // Show notification immediately when download starts (not just on progress)
-    notificationService.showDownloadProgress(
-      next.id,
-      next.videoTitle,
-      0,
-      'Starting download...',
-      () => this.cancelDownload(next.id),
-    );
+    // // Show notification immediately when download starts (not just on progress)
+    // notificationService.showDownloadProgress(
+    //   next.id,
+    //   next.videoTitle,
+    //   0,
+    //   'Starting download...',
+    //   () => this.cancelDownload(next.id),
+    // );
 
     try {
       await this.executeDownload(next);
@@ -124,11 +124,19 @@ export class ClientDownloadQueue {
   }
 
   private executeDownload(job: DownloadJob): Promise<void> {
-    console.log("JOB:", job)
+    console.log("🔧 EXECUTING DOWNLOAD JOB:", job)
     return new Promise((resolve, reject) => {
       const cb = this.callbacks.get(job.id);
+      
+      // 🔧 Force specific method if requested
+      if (job.forceMethod) {
+        console.log(`🔧 Forcing download method: ${job.forceMethod.toUpperCase()}`);
+        downloadService.forceNextDownloadMethod(job.forceMethod);
+      }
+      
+      // 🔧 Use Smart Download (chooses method based on config)
       downloadService
-        .downloadVideo(
+        .downloadVideoSmart(
           {
             videoId: job.videoId,
             format: job.format,
@@ -151,7 +159,7 @@ export class ClientDownloadQueue {
           (filePath: string, filename: string) => {
             job.filePath = filePath;
             job.filename = filename;
-            notificationService.showDownloadComplete(job.id, job.videoTitle);
+            // notificationService.showDownloadComplete(job.id, job.videoTitle);
             cb?.onComplete?.(filePath, filename);
             resolve();
           },

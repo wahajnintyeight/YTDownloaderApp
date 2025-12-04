@@ -18,6 +18,7 @@ import {
   normalizeBase64 as normalizeBase64Helper,
   assembleChunks as assembleChunksHelper,
 } from './download/chunks';
+import { SmartDownloadManager } from './smartDownloadManager';
 
 // Lightweight ID generator: 5 alphanumeric pairs (2 chars each) separated by dashes
 function generateLightweightId(): string {
@@ -34,6 +35,7 @@ function generateLightweightId(): string {
 class DownloadService {
   private apiBaseUrl: string;
   private sseBaseUrl: string;
+  private smartDownloadManager: SmartDownloadManager;
   private activeEventSources: Map<string, EventSource> = new Map();
   private reconnectAttempts: Map<string, number> = new Map();
   private heartbeatTimers: Map<string, ReturnType<typeof setTimeout>> =
@@ -121,8 +123,8 @@ class DownloadService {
   // Export to user-selected location (SAF content URI or filesystem path)
 
   private async ensureSink(
-    downloadId: string, 
-    filename: string, 
+    downloadId: string,
+    filename: string,
     mimeType: string
   ): Promise<any> {
     let sink = this.sinkById.get(downloadId);
@@ -155,7 +157,7 @@ class DownloadService {
 
   // Streaming sink support for chunked downloads (replaces buffering)
   private sinkById = new Map<string, any>(); // downloadId -> Sink interface
-  
+
   // normalizeBase64 removed; handled by helper in download/chunks
   private pausedOnBackground: Set<string> = new Set();
   private appState: AppStateStatus = 'active';
@@ -166,6 +168,10 @@ class DownloadService {
   ) {
     this.apiBaseUrl = apiBaseUrl;
     this.sseBaseUrl = sseBaseUrl;
+    
+    // Initialize smart download manager
+    this.smartDownloadManager = new SmartDownloadManager(this);
+    
     // Manage SSE lifecycle with AppState to reduce background load
     AppState.addEventListener('change', this.handleAppStateChange);
 
@@ -190,7 +196,7 @@ class DownloadService {
       if (!defaultPath.startsWith('content://')) {
         try {
           await RNFS.mkdir(defaultPath);
-        } catch {}
+        } catch { }
       }
 
       await storageService.setDownloadPath(defaultPath);
@@ -249,6 +255,217 @@ class DownloadService {
     }
   };
 
+  /**
+   * 🔧 SMART DOWNLOAD - Uses configuration to choose method
+   * This is the main method you should use - it automatically chooses
+   * between SSE and Direct Stream based on your config
+   */
+  async downloadVideoSmart(
+    options: DownloadOptions,
+    onProgress?: (progress: number) => void,
+    onComplete?: (filePath: string, filename: string) => void,
+    onError?: (error: string) => void,
+    localDownloadId?: string,
+  ): Promise<string> {
+    return await this.smartDownloadManager.downloadVideo(
+      options,
+      onProgress,
+      onComplete,
+      onError,
+      localDownloadId,
+    );
+  }
+
+  /**
+   * 🔧 CONFIGURATION METHODS
+   */
+  
+  // Switch download method at runtime
+  setDownloadMethod(method: 'sse' | 'direct-stream') {
+    this.smartDownloadManager.updateConfig({ method });
+    console.log(`🔧 Download method switched to: ${method.toUpperCase()}`);
+  }
+  
+  // Force next download to use specific method
+  forceNextDownloadMethod(method: 'sse' | 'direct-stream') {
+    this.smartDownloadManager.forceMethod(method);
+    console.log(`🔧 Next download will use: ${method.toUpperCase()}`);
+  }
+  
+  // Get current configuration
+  getDownloadConfig() {
+    return this.smartDownloadManager.getConfig();
+  }
+  
+  // Update configuration
+  updateDownloadConfig(config: any) {
+    this.smartDownloadManager.updateConfig(config);
+  }
+
+  /**
+   * 🔧 DIRECT STREAM METHOD (for manual use)
+   */
+  async downloadVideoDirectStream(
+    options: DownloadOptions,
+    onProgress?: (progress: number) => void,
+    onComplete?: (filePath: string, filename: string) => void,
+    onError?: (error: string) => void,
+    localDownloadId?: string,
+  ): Promise<string> {
+    const timestamp = new Date().toISOString();
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`[${timestamp}] 📥 DIRECT STREAM DOWNLOAD INITIATED`);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📋 Download Options:', {
+      videoId: options.videoId,
+      format: options.format,
+      quality: options.quality || 'default',
+      videoTitle: options.videoTitle,
+    });
+
+    try {
+      // Generate client-side ID
+      const downloadId = generateLightweightId();
+      console.log(`🆔 Generated client downloadId: ${downloadId}`);
+
+      // Build streaming URL - Direct HTTP GET with downloadId in path
+      const query: string[] = [
+        `videoId=${encodeURIComponent(options.videoId)}`,
+        `format=${encodeURIComponent(options.format)}`,
+        `videoTitle=${encodeURIComponent(options.videoTitle || '')}`,
+        `youtubeURL=${encodeURIComponent(`https://www.youtube.com/watch?v=${options.videoId}`)}`,
+      ];
+      if (options.quality) {
+        query.push(`quality=${encodeURIComponent(options.quality)}`);
+      }
+      const streamUrl = `${this.sseBaseUrl}/stream/${downloadId}?${query.join('&')}`;
+
+      console.log('🌐 Stream URL:', streamUrl);
+
+      // Determine download directory and filename
+      // NOTE: react-native-blob-util cannot write directly to SAF content:// URIs,
+      // so if the user-selected path is a SAF URI we fall back to a real
+      // filesystem directory for the actual write.
+      const baseDir =
+        this.customDownloadPath &&
+        !this.customDownloadPath.startsWith('content://')
+          ? this.customDownloadPath
+          : Platform.OS === 'android'
+          ? `${RNFS.DownloadDirectoryPath}/YTDownloader`
+          : `${RNFS.DocumentDirectoryPath}/YTDownloader`;
+
+      const sanitizedTitle = this.sanitizeFileName(
+        options.videoTitle || options.videoId,
+      );
+      const filename = `${sanitizedTitle}.${options.format}`;
+      const filePath = `${baseDir}/${filename}`;
+
+      console.log('📂 Download base dir:', baseDir);
+      console.log('📂 Download path:', filePath);
+      console.log('📥 Starting native download manager...');
+
+      // Ensure download directory exists (only for real filesystem paths)
+      try {
+        await RNFS.mkdir(baseDir);
+      } catch {
+        // Directory might already exist
+      }
+
+      // Use react-native-blob-util for native download
+      const ReactNativeBlobUtil = (await import('react-native-blob-util'))
+        .default;
+      const { config } = ReactNativeBlobUtil;
+
+      const downloadConfig: any = {
+        fileCache: true,
+        path: filePath,
+        trusty: true, // For development with self-signed certs
+      };
+
+      // Android-specific: Use Download Manager for background downloads
+      if (Platform.OS === 'android') {
+        downloadConfig.addAndroidDownloads = {
+          useDownloadManager: true,
+          notification: true,
+          title: `Downloading ${sanitizedTitle}`,
+          description: 'YouTube Video Download',
+          mime: options.format === 'mp3' ? 'audio/mpeg' : 'video/mp4',
+          mediaScannable: true,
+          path: filePath,
+        };
+      }
+
+      // Start the download
+      const task = config(downloadConfig).fetch('GET', streamUrl);
+
+      // Track native download progress via Download Manager
+      task.progress((received, total) => {
+        const recNum = Number(received);
+        const totNum = Number(total);
+        if (totNum > 0) {
+          const nativeProgress = (recNum / totNum) * 100;
+          console.log(
+            `📊 Download Progress: ${nativeProgress.toFixed(1)}% (${recNum}/${totNum} bytes)`,
+          );
+          onProgress?.(nativeProgress);
+        }
+      });
+
+      // Wait for download to complete
+      const res = await task;
+      const savedPath = res.path();
+
+      console.log('✅ Download completed successfully!');
+      console.log('📂 Saved to:', savedPath);
+
+      // Save to storage service
+      const video: DownloadedVideo = {
+        id: localDownloadId || downloadId,
+        videoId: options.videoId,
+        title: options.videoTitle || sanitizedTitle,
+        format: options.format,
+        filePath: savedPath,
+        filename: filename,
+        downloadedAt: Date.now(),
+      };
+      await storageService.addDownloadedVideo(video);
+
+      // Call completion callback
+      onComplete?.(savedPath, filename);
+
+      return downloadId;
+    } catch (error: any) {
+      console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.error('❌ DIRECT STREAM DOWNLOAD FAILED');
+      console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.error('Error details (raw):', error);
+      try {
+        // react-native-blob-util often returns a structured object, not an Error instance
+        const debug = {
+          message: error?.message,
+          status: error?.status,
+          code: error?.code,
+          response: error?.response,
+          // Some builds put the body / description on `error.text` or `error.data`
+          text: error?.text,
+          data: error?.data,
+        };
+        console.error('Error details (structured):', debug);
+      } catch {
+        // Best-effort logging only
+      }
+      console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : error?.message || error?.data || 'Failed to start download';
+
+      onError?.(typeof message === 'string' ? message : 'Failed to start download');
+      throw error;
+    }
+  }
+
   async downloadVideo(
     options: DownloadOptions,
     onProgress?: (progress: number) => void,
@@ -286,7 +503,7 @@ class DownloadService {
       if (options.videoTitle) {
         this.videoTitleMap.set(downloadId, options.videoTitle);
       }
-      
+
       // Start SSE immediately to avoid missing early events
       this.startSSEListener(
         downloadId,
@@ -465,8 +682,7 @@ class DownloadService {
             this.reconnectAttempts.set(downloadId, attempts + 1);
             const backoffDelay = Math.min(1000 * Math.pow(2, attempts), 5000);
             console.log(
-              `🔄 Reconnecting in ${backoffDelay}ms (attempt ${attempts + 1}/${
-                this.maxReconnectAttempts
+              `🔄 Reconnecting in ${backoffDelay}ms (attempt ${attempts + 1}/${this.maxReconnectAttempts
               })...\n`,
             );
 
@@ -546,8 +762,7 @@ class DownloadService {
                   console.log(`💬 Message: ${data.message}`);
                   console.log(`🆔 Server Download ID: ${data.downloadId}`);
                   console.log(
-                    `🏠 Local Download ID: ${
-                      localDownloadId || 'not provided'
+                    `🏠 Local Download ID: ${localDownloadId || 'not provided'
                     }`,
                   );
                 }
@@ -615,7 +830,7 @@ class DownloadService {
                     // Determine desired filename: videoTitle + extension, fallback to server filename
                     const providedTitle = (data as any).videoTitle as
                       | string
-                      | undefined || 
+                      | undefined ||
                       this.videoTitleMap.get(downloadId);
                     const serverFilename =
                       data.filename ||
@@ -628,8 +843,8 @@ class DownloadService {
                       inferExtension((data as any).format, urlMime) ||
                       (serverFilename?.includes('.')
                         ? serverFilename.substring(
-                            serverFilename.lastIndexOf('.'),
-                          )
+                          serverFilename.lastIndexOf('.'),
+                        )
                         : '');
                     const desiredFilename = ext
                       ? `${baseTitle}${ext}`
@@ -676,7 +891,7 @@ class DownloadService {
                 data.mimeType || data.file?.mimeType || 'audio/mpeg';
               const providedTitle = (data as any).videoTitle as
                 | string
-                | undefined || 
+                | undefined ||
                 this.videoTitleMap.get(downloadId);
               const rawServerFilename =
                 data.filename ||
@@ -690,8 +905,8 @@ class DownloadService {
                 const baseTitle = sanitizeFileName(providedTitle!);
                 const serverExt = sanitizedServerFilename.includes('.')
                   ? sanitizedServerFilename.substring(
-                      sanitizedServerFilename.lastIndexOf('.'),
-                    )
+                    sanitizedServerFilename.lastIndexOf('.'),
+                  )
                   : inferExtension((data as any).format, mimeType) || '.mp3';
                 filename = `${baseTitle}${serverExt}`;
               }
@@ -700,14 +915,14 @@ class DownloadService {
                 // Check if we have a streaming sink or buffered chunks
                 const sink = this.sinkById.get(downloadId);
                 const hasChunks = this.chunkBuffer.has(downloadId);
-                
+
                 if (sink) {
                   // Streaming download completed - finalize the sink
                   setTimeout(async () => {
                     try {
                       const finalPath = await sink.finalize();
                       forwardProgress(downloadId, 100);
-                      
+
                       const video: DownloadedVideo = {
                         id: localDownloadId || downloadId,
                         videoId: (data as any).videoId || '',
@@ -926,8 +1141,7 @@ class DownloadService {
           // Calculate exponential backoff delay
           const backoffDelay = Math.min(1000 * Math.pow(2, attempts), 10000);
           console.log(
-            `🔄 Reconnecting in ${backoffDelay}ms (attempt ${attempts + 1}/${
-              this.maxReconnectAttempts
+            `🔄 Reconnecting in ${backoffDelay}ms (attempt ${attempts + 1}/${this.maxReconnectAttempts
             })...\n`,
           );
 
@@ -958,9 +1172,9 @@ class DownloadService {
     console.log(`📂 Download path set to: ${path}`);
     // Only create directory for filesystem paths, not SAF URIs
     if (!path.startsWith('content://')) {
-      RNFS.mkdir(path).catch(() => {});
+      RNFS.mkdir(path).catch(() => { });
     }
-    storageService.setDownloadPath(path).catch(() => {});
+    storageService.setDownloadPath(path).catch(() => { });
   }
 
   private customDownloadPath: string | null = null;
