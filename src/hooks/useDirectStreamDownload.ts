@@ -9,6 +9,7 @@ interface DirectDownloadOptions {
   videoTitle: string;
   format: 'mp3' | 'mp4' | 'webm';
   quality?: string;
+  bitRate?: string;
   onProgress?: (progress: number) => void;
   onComplete?: (filePath: string, filename: string) => void;
   onError?: (error: string) => void;
@@ -29,6 +30,7 @@ export const useDirectStreamDownload = () => {
       videoTitle,
       format,
       quality,
+      bitRate,
       onProgress,
       onComplete,
       onError,
@@ -36,17 +38,22 @@ export const useDirectStreamDownload = () => {
 
     try {
       console.log('🟢 Starting Direct Stream Download');
-      console.log('📋 Options:', { videoId, videoTitle, format, quality });
+      console.log('📋 Options:', { videoId, videoTitle, format, quality, bitRate });
 
-      // Build streaming URL
-      const streamUrl = new URL(`${SSE_BASE_URL}/stream`);
-      streamUrl.searchParams.set('videoId', videoId);
-      streamUrl.searchParams.set('format', format);
+      // Build streaming URL (manual query string to avoid URLSearchParams typings)
+      const query: string[] = [
+        `videoId=${encodeURIComponent(videoId)}`,
+        `format=${encodeURIComponent(format)}`,
+      ];
       if (quality) {
-        streamUrl.searchParams.set('quality', quality);
+        query.push(`quality=${encodeURIComponent(quality)}`);
       }
+      if (bitRate) {
+        query.push(`bitRate=${encodeURIComponent(bitRate)}`);
+      }
+      const streamUrl = `${SSE_BASE_URL}/stream?${query.join('&')}`;
 
-      console.log('🌐 Stream URL:', streamUrl.toString());
+      console.log('🌐 Stream URL:', streamUrl);
 
       // Determine download directory
       const { config, fs } = ReactNativeBlobUtil;
@@ -92,13 +99,15 @@ export const useDirectStreamDownload = () => {
       console.log('📥 Starting native download...');
 
       // Start the download
-      const task = config(downloadConfig).fetch('GET', streamUrl.toString());
+      const task = config(downloadConfig).fetch('GET', streamUrl);
 
-      // Track progress
+      // Track progress based on real total bytes when available.
       task.progress((received, total) => {
-        if (total > 0) {
-          const progress = (received / total) * 100;
-          console.log(`📊 Progress: ${progress.toFixed(1)}% (${received}/${total} bytes)`);
+        const recNum = Number(received);
+        const totNum = Number(total);
+        if (totNum > 0) {
+          const progress = (recNum / totNum) * 100;
+          console.log(`📊 Progress: ${progress.toFixed(1)}% (${recNum}/${totNum} bytes)`);
           onProgress?.(progress);
         }
       });

@@ -168,10 +168,10 @@ class DownloadService {
   ) {
     this.apiBaseUrl = apiBaseUrl;
     this.sseBaseUrl = sseBaseUrl;
-    
+
     // Initialize smart download manager
     this.smartDownloadManager = new SmartDownloadManager(this);
-    
+
     // Manage SSE lifecycle with AppState to reduce background load
     AppState.addEventListener('change', this.handleAppStateChange);
 
@@ -279,24 +279,24 @@ class DownloadService {
   /**
    * 🔧 CONFIGURATION METHODS
    */
-  
+
   // Switch download method at runtime
   setDownloadMethod(method: 'sse' | 'direct-stream') {
     this.smartDownloadManager.updateConfig({ method });
     console.log(`🔧 Download method switched to: ${method.toUpperCase()}`);
   }
-  
+
   // Force next download to use specific method
   forceNextDownloadMethod(method: 'sse' | 'direct-stream') {
     this.smartDownloadManager.forceMethod(method);
     console.log(`🔧 Next download will use: ${method.toUpperCase()}`);
   }
-  
+
   // Get current configuration
   getDownloadConfig() {
     return this.smartDownloadManager.getConfig();
   }
-  
+
   // Update configuration
   updateDownloadConfig(config: any) {
     this.smartDownloadManager.updateConfig(config);
@@ -319,6 +319,7 @@ class DownloadService {
     console.log('📋 Download Options:', {
       videoId: options.videoId,
       format: options.format,
+      bitRate: options.bitRate || 'default',
       quality: options.quality || 'default',
       videoTitle: options.videoTitle,
     });
@@ -335,6 +336,9 @@ class DownloadService {
         `videoTitle=${encodeURIComponent(options.videoTitle || '')}`,
         `youtubeURL=${encodeURIComponent(`https://www.youtube.com/watch?v=${options.videoId}`)}`,
       ];
+      if (options.bitRate) {
+        query.push(`bitRate=${encodeURIComponent(options.bitRate)}`);
+      }
       if (options.quality) {
         query.push(`quality=${encodeURIComponent(options.quality)}`);
       }
@@ -348,11 +352,11 @@ class DownloadService {
       // filesystem directory for the actual write.
       const baseDir =
         this.customDownloadPath &&
-        !this.customDownloadPath.startsWith('content://')
+          !this.customDownloadPath.startsWith('content://')
           ? this.customDownloadPath
           : Platform.OS === 'android'
-          ? `${RNFS.DownloadDirectoryPath}/YTDownloader`
-          : `${RNFS.DocumentDirectoryPath}/YTDownloader`;
+            ? `${RNFS.DownloadDirectoryPath}/YTDownloader`
+            : `${RNFS.DocumentDirectoryPath}/YTDownloader`;
 
       const sanitizedTitle = this.sanitizeFileName(
         options.videoTitle || options.videoId,
