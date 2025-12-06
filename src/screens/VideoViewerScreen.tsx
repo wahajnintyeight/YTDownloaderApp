@@ -1,17 +1,16 @@
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Animated,
   ActivityIndicator,
 } from 'react-native';
 import { useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
-import YoutubeIframe from 'react-native-youtube-iframe';
+import { YoutubeView, useYouTubePlayer, useYouTubeEvent } from 'react-native-youtube-bridge';
 import { Download } from 'lucide-react-native';
 import { useTheme } from '../hooks/useTheme';
 import { Video } from '../types/video';
@@ -89,20 +88,13 @@ const VideoViewerScreen: React.FC = () => {
   const { video, youtubeUrl } = route.params;
   const [downloadVisible, setDownloadVisible] = useState(false);
   const [isReady, setIsReady] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
   
   // Related videos state
   const [relatedVideos, setRelatedVideos] = useState<Video[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(false);
   
-  // Animated header for scroll-away effect
-  const headerTranslateY = useRef(new Animated.Value(0)).current;
-  const lastScrollY = useRef(0);
-  const scrollDirection = useRef<'up' | 'down'>('up');
-  
   // Detect landscape mode
   const isLandscape = SCREEN_WIDTH > SCREEN_HEIGHT;
-  const isTablet = SCREEN_WIDTH >= 600;
   
   // Responsive player height that updates on rotation
   // Header is absolute and can slide away, so we can use more space
@@ -115,75 +107,35 @@ const VideoViewerScreen: React.FC = () => {
     return SCREEN_WIDTH * (9 / 16);
   }, [SCREEN_WIDTH, SCREEN_HEIGHT, isLandscape]);
 
-  // Extract video ID from URL or use video.id directly
-  const videoId = useMemo(() => {
+  // Extract video ID or URL for YouTube player
+  const videoIdOrUrl = useMemo(() => {
     if (youtubeUrl && youtubeUrl.trim().length > 0) {
-      const url = youtubeUrl.trim();
-      // Handle various YouTube URL formats
-      const patterns = [
-        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^#&?]{11})/,
-        /^([a-zA-Z0-9_-]{11})$/, // Direct video ID
-      ];
-      for (const pattern of patterns) {
-        const match = url.match(pattern);
-        if (match && match[1]) {
-          return match[1];
-        }
-      }
+      return youtubeUrl.trim();
+    }
+    // If it's already a video ID, construct a URL
+    if (video.id && video.id.length === 11) {
+      return `https://www.youtube.com/watch?v=${video.id}`;
     }
     return video.id;
   }, [youtubeUrl, video.id]);
 
-  const onStateChange = useCallback((state: string) => {
-    // Handle state changes if needed
-    if (state === 'ended') {
-      // Video ended
-    }
-  }, []);
+  // Initialize YouTube player
+  const player = useYouTubePlayer(videoIdOrUrl, {
+    autoplay: false,
+    controls: true,
+    playsinline: true,
+    rel: false,
+  });
 
-  const onReady = useCallback(() => {
+  // Handle player ready event
+  useYouTubeEvent(player, 'ready', () => {
     setIsReady(true);
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-  }, [fadeAnim]);
+  });
 
-  // Handle scroll to show/hide header
-  const handleScroll = useCallback((event: any) => {
-    const currentScrollY = event.nativeEvent.contentOffset.y;
-    const scrollDifference = currentScrollY - lastScrollY.current;
-    
-    // Only animate if scroll difference is significant (avoid jitter)
-    if (Math.abs(scrollDifference) > 5) {
-      if (scrollDifference > 0 && currentScrollY > 50) {
-        // Scrolling down - hide header
-        if (scrollDirection.current !== 'down') {
-          scrollDirection.current = 'down';
-          Animated.spring(headerTranslateY, {
-            toValue: -100,
-            useNativeDriver: true,
-            tension: 100,
-            friction: 8,
-          }).start();
-        }
-      } else if (scrollDifference < 0) {
-        // Scrolling up - show header
-        if (scrollDirection.current !== 'up') {
-          scrollDirection.current = 'up';
-          Animated.spring(headerTranslateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            tension: 100,
-            friction: 8,
-          }).start();
-        }
-      }
-    }
-    
-    lastScrollY.current = currentScrollY;
-  }, [headerTranslateY]);
+  // Handle player errors
+  useYouTubeEvent(player, 'error', (error: any) => {
+    console.error('YouTube player error:', error);
+  });
 
   const styles = useMemo(
     () =>
@@ -196,11 +148,6 @@ const VideoViewerScreen: React.FC = () => {
           flex: 1,
         },
         header: {
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          zIndex: 1000,
           flexDirection: 'row',
           alignItems: 'center',
           paddingHorizontal: isLandscape ? theme.spacing.md : theme.spacing.lg,
@@ -209,11 +156,6 @@ const VideoViewerScreen: React.FC = () => {
           borderBottomColor: theme.colors.border,
           minHeight: isLandscape ? 40 : 56,
           backgroundColor: theme.colors.background,
-          elevation: 4,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 4,
         },
         backButton: {
           paddingVertical: theme.spacing.xs,
@@ -279,10 +221,14 @@ const VideoViewerScreen: React.FC = () => {
           alignItems: 'center',
           backgroundColor: '#000000',
         },
-        content: {
-          flex: 1,
-          paddingHorizontal: isLandscape ? theme.spacing.md : theme.spacing.lg,
-          paddingVertical: isLandscape ? theme.spacing.sm : theme.spacing.md,
+        fixedSection: {
+          // This section doesn't scroll
+          backgroundColor: theme.colors.background,
+        },
+        videoInfoSection: {
+          paddingHorizontal: theme.spacing.lg,
+          paddingVertical: theme.spacing.md,
+          backgroundColor: theme.colors.background,
         },
         title: {
           fontSize: isLandscape ? 16 : 18,
@@ -378,8 +324,14 @@ const VideoViewerScreen: React.FC = () => {
           color: theme.colors.textSecondary,
           lineHeight: 20,
         },
+        relatedVideosScroll: {
+          flex: 1,
+          backgroundColor: theme.colors.background,
+        },
+        relatedListContent: {
+          paddingBottom: theme.spacing.xl,
+        },
         relatedSection: {
-          marginTop: theme.spacing.lg,
           paddingTop: theme.spacing.lg,
           borderTopWidth: 1,
           borderTopColor: theme.colors.border,
@@ -394,11 +346,8 @@ const VideoViewerScreen: React.FC = () => {
         relatedList: {
           paddingHorizontal: isLandscape ? theme.spacing.md : theme.spacing.lg,
         },
-        relatedListContent: {
-          paddingBottom: theme.spacing.xl,
-        },
       }),
-    [theme, isLandscape, isTablet, PLAYER_HEIGHT],
+    [theme, isLandscape, PLAYER_HEIGHT],
   );
 
   // Fetch related videos when video changes
@@ -433,12 +382,10 @@ const VideoViewerScreen: React.FC = () => {
     fetchRelatedVideos();
   }, [video.id, video.channelName, video.title]);
 
-  // Reset header position when component mounts or video changes
-  React.useEffect(() => {
-    headerTranslateY.setValue(0);
-    lastScrollY.current = 0;
-    scrollDirection.current = 'up';
-  }, [video.id, headerTranslateY]);
+  // Reset ready state when video changes
+  useEffect(() => {
+    setIsReady(false);
+  }, [video.id]);
 
   // Handle related video press
   const handleRelatedVideoPress = useCallback((relatedVideo: Video) => {
@@ -448,15 +395,8 @@ const VideoViewerScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.safeArea} edges={isLandscape ? ['top'] : ['top', 'bottom']}>
       <View style={styles.container}>
-        {/* Animated header that slides away on scroll */}
-        <Animated.View
-          style={[
-            styles.header,
-            {
-              transform: [{ translateY: headerTranslateY }],
-            },
-          ]}
-        >
+        {/* Header - Always visible */}
+        <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}
@@ -480,128 +420,125 @@ const VideoViewerScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           )}
-        </Animated.View>
+        </View>
 
-        <ScrollView 
-          style={styles.container} 
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={isLandscape ? { paddingBottom: 0 } : undefined}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
-        >
-        {/* Video Player */}
-        <View style={styles.playerContainer}>
-          <Animated.View style={[styles.playerWrapper, { opacity: fadeAnim }]}>
-            <YoutubeIframe
+        {/* Fixed Video Player + Info Section */}
+        <View style={styles.fixedSection}>
+          {/* Video Player */}
+          <View style={styles.playerContainer}>
+            <YoutubeView
+              player={player}
               height={PLAYER_HEIGHT}
               width={SCREEN_WIDTH}
-              videoId={videoId}
+              style={styles.playerWrapper}
               webViewStyle={{ flex: 1 }}
-              play={false}
-              onChangeState={onStateChange}
-              onReady={onReady}
               webViewProps={{
                 androidLayerType: 'hardware',
                 allowsInlineMediaPlayback: true,
                 mediaPlaybackRequiresUserAction: false,
               }}
             />
-          </Animated.View>
-          {!isReady && (
-            <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="large" color={theme.colors.primary} />
-            </View>
-          )}
-          {/* Landscape overlay with video info */}
-          {isLandscape && isReady && (
-            <View style={styles.landscapeContent}>
-              <Text style={styles.landscapeTitle} numberOfLines={1}>
+            {!isReady && (
+              <View style={styles.loadingOverlay}>
+                <ActivityIndicator size="large" color={theme.colors.primary} />
+              </View>
+            )}
+            {/* Landscape overlay with video info */}
+            {isLandscape && isReady && (
+              <View style={styles.landscapeContent}>
+                <Text style={styles.landscapeTitle} numberOfLines={1}>
+                  {video.title}
+                </Text>
+                <TouchableOpacity
+                  style={styles.downloadButtonCompact}
+                  onPress={() => setDownloadVisible(true)}
+                  activeOpacity={0.8}
+                >
+                  <Download size={16} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* Video Info - Only in portrait */}
+          {!isLandscape && (
+            <View style={styles.videoInfoSection}>
+              <Text style={styles.title}>
                 {video.title}
               </Text>
+
+              <View style={styles.statsContainer}>
+                {video.viewCount != null && (
+                  <Text style={styles.metaText}>{formatViewCount(video.viewCount)} views</Text>
+                )}
+                <Text style={styles.metaText}>•</Text>
+                <Text style={styles.metaText}>
+                  {formatDate(video.publishedAt)}
+                </Text>
+              </View>
+
+              <View style={styles.divider} />
+
+              {/* Channel Info */}
+              <View style={styles.channelRow}>
+                <View style={styles.channelAvatar}>
+                  <Text style={styles.channelInitial}>
+                    {video.channelName?.charAt(0).toUpperCase() || 'Y'}
+                  </Text>
+                </View>
+                <View style={styles.channelInfo}>
+                  <Text style={styles.channelName} numberOfLines={1}>
+                    {video.channelName}
+                  </Text>
+                  {video.duration && (
+                    <Text style={styles.channelMeta}>
+                      Duration: {formatDuration(video.duration)}
+                    </Text>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.divider} />
+
+              {/* Download Button */}
               <TouchableOpacity
-                style={styles.downloadButtonCompact}
+                style={styles.downloadButton}
                 onPress={() => setDownloadVisible(true)}
                 activeOpacity={0.8}
               >
                 <Download size={16} color="#FFFFFF" />
+                <Text style={styles.downloadButtonText}>Download</Text>
               </TouchableOpacity>
             </View>
           )}
         </View>
 
-        {/* Video Info - Compact in landscape */}
-        {!isLandscape && (
-          <View style={styles.content}>
-            <Text style={styles.title}>
-              {video.title}
-            </Text>
-
-            <View style={styles.statsContainer}>
-              {video.viewCount != null && (
-                <Text style={styles.metaText}>{formatViewCount(video.viewCount)} views</Text>
-              )}
-              <Text style={styles.metaText}>•</Text>
-              <Text style={styles.metaText}>
-                {formatDate(video.publishedAt)}
-              </Text>
-            </View>
-
-            <View style={styles.divider} />
-
-            {/* Channel Info */}
-            <View style={styles.channelRow}>
-              <View style={styles.channelAvatar}>
-                <Text style={styles.channelInitial}>
-                  {video.channelName?.charAt(0).toUpperCase() || 'Y'}
-                </Text>
-              </View>
-              <View style={styles.channelInfo}>
-                <Text style={styles.channelName} numberOfLines={1}>
-                  {video.channelName}
-                </Text>
-                {video.duration && (
-                  <Text style={styles.channelMeta}>
-                    Duration: {formatDuration(video.duration)}
-                  </Text>
+        {/* Scrollable Related Videos Section */}
+        {relatedVideos.length > 0 && (
+          <ScrollView
+            style={styles.relatedVideosScroll}
+            showsVerticalScrollIndicator={true}
+            contentContainerStyle={styles.relatedListContent}
+          >
+            <View style={styles.relatedSection}>
+              <Text style={styles.relatedTitle}>Related Videos</Text>
+              <View style={styles.relatedList}>
+                {relatedVideos.map((item, index) => (
+                  <VideoResultCard
+                    key={`${item.id}-${index}`}
+                    video={item}
+                    onPress={handleRelatedVideoPress}
+                  />
+                ))}
+                {loadingRelated && (
+                  <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+                    <ActivityIndicator size="small" color={theme.colors.primary} />
+                  </View>
                 )}
               </View>
             </View>
-
-            <View style={styles.divider} />
-
-            {/* Download Button - only in portrait */}
-            <TouchableOpacity
-              style={styles.downloadButton}
-              onPress={() => setDownloadVisible(true)}
-              activeOpacity={0.8}
-            >
-              <Download size={16} color="#FFFFFF" />
-              <Text style={styles.downloadButtonText}>Download</Text>
-            </TouchableOpacity>
-          </View>
+          </ScrollView>
         )}
-
-        {/* Related Videos Section */}
-        {relatedVideos.length > 0 && (
-          <View style={styles.relatedSection}>
-            <Text style={styles.relatedTitle}>Related Videos</Text>
-            <View style={styles.relatedList}>
-              {relatedVideos.map((item, index) => (
-                <VideoResultCard
-                  key={`${item.id}-${index}`}
-                  video={item}
-                  onPress={handleRelatedVideoPress}
-                />
-              ))}
-              {loadingRelated && (
-                <View style={{ paddingVertical: 16, alignItems: 'center' }}>
-                  <ActivityIndicator size="small" color={theme.colors.primary} />
-                </View>
-              )}
-            </View>
-          </View>
-        )}
-      </ScrollView>
 
       <DownloadDrawer
         visible={downloadVisible}
