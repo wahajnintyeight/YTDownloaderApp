@@ -17,7 +17,7 @@ interface AppHeaderProps {
 }
 
 const AppHeader: React.FC<AppHeaderProps> = ({ 
-  title = 'YT Downloader',
+  title,
   showThemeToggle = true,
   onThemeToggle,
 }) => {
@@ -109,8 +109,14 @@ const AppHeader: React.FC<AppHeaderProps> = ({
           
           <View style={styles.centerSection}>
             <View style={styles.brandContainer}>
-              <Text style={styles.title}>{title}</Text>
-              <Text style={styles.subtitle}>Video Downloader</Text>
+              {title && title.trim() ? (
+                <Text style={styles.title}>{title}</Text>
+              ) : (
+                <>
+                  <Text style={styles.title}>Browse</Text>
+                  <Text style={styles.subtitle}>Discover videos</Text>
+                </>
+              )}
               <View style={styles.brandAccent} />
             </View>
           </View>

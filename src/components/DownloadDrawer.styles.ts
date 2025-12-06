@@ -23,7 +23,7 @@ export const getDrawerStyles = (theme: Theme) =>
       backgroundColor: theme.colors.surface,
       borderTopLeftRadius: ms(20),
       borderTopRightRadius: ms(20),
-      overflow: 'hidden',
+      overflow: 'hidden', // Clip content to drawer bounds
     },
     dragHandle: {
       width: scale(36),
@@ -54,15 +54,16 @@ export const getDrawerStyles = (theme: Theme) =>
     videoInfo: {
       flexDirection: 'row',
       marginBottom: vs(16),
+      alignItems: 'flex-start', // Align items to top
     },
     thumbnail: {
-      width: scale(120),
-      height: vs(68),
       borderRadius: ms(8),
       marginRight: scale(12),
+      flexShrink: 0, // Prevent thumbnail from shrinking
     },
     videoDetails: {
       flex: 1,
+      minWidth: 0, // Allow text to shrink properly in flexbox
     },
     videoTitle: {
       fontSize: ms(16),
@@ -103,44 +104,52 @@ export const getDrawerStyles = (theme: Theme) =>
 export const getSelectorStyles = (theme: Theme) =>
   StyleSheet.create({
     container: {
-      marginBottom: vs(16),
+      marginBottom: vs(18),
     },
     header: {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: vs(8),
+      marginBottom: vs(14),
     },
     title: {
-      fontSize: ms(16),
-      fontWeight: '600',
+      fontSize: ms(18),
+      fontWeight: '700',
       color: theme.colors.text,
     },
     expandButton: {
-      paddingHorizontal: scale(8),
-      paddingVertical: vs(4),
+      paddingHorizontal: scale(12),
+      paddingVertical: vs(6),
+      borderRadius: ms(8),
+      backgroundColor: theme.colors.background,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
     },
     expandText: {
-      fontSize: ms(12),
-      fontWeight: '500',
-      color: theme.colors.secondary,
+      fontSize: ms(13),
+      fontWeight: '600',
+      color: theme.colors.primary,
     },
     options: {
       flexDirection: 'row',
       flexWrap: 'wrap',
       gap: scale(8),
+      width: '100%',
     },
   });
 
 export const getOptionButtonStyles = (theme: Theme) =>
   StyleSheet.create({
     button: {
-      paddingHorizontal: scale(12),
-      paddingVertical: vs(8),
-      borderRadius: ms(20),
-      borderWidth: 1,
+      paddingHorizontal: scale(14),
+      paddingVertical: vs(12),
+      borderRadius: ms(10),
+      borderWidth: 1.5,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     text: {
       fontSize: ms(14),
+      textAlign: 'center',
     },
   });

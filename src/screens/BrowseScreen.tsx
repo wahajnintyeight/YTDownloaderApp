@@ -10,7 +10,7 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import { useRoute, RouteProp } from '@react-navigation/native';
+import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { Search, Link as LinkIcon, Download, Youtube, ArrowRight } from 'lucide-react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { Video } from '../types/video';
@@ -27,7 +27,10 @@ type BrowseScreenRouteProp = RouteProp<MainTabParamList, 'Browse'>;
 const BrowseScreen: React.FC = () => {
   const { theme, isDark } = useTheme();
   const route = useRoute<BrowseScreenRouteProp>();
+  const navigation = useNavigation<any>();
   const { results, loading, error, hasMore, search, loadMore } = useSearch();
+
+  // All hooks must be called unconditionally at the top
 
   const [mode, setMode] = useState<'search' | 'url'>('search');
   const [searchQuery, setSearchQuery] = useState('');
@@ -36,8 +39,13 @@ const BrowseScreen: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false);
 
   const handleSearch = useCallback(async (query: string) => {
-    setSearchQuery(query);
-    await search(query, true);
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) {
+      // Don't search with empty query, just return silently
+      return;
+    }
+    setSearchQuery(trimmedQuery);
+    await search(trimmedQuery, true);
   }, [search]);
 
   // Initialize search from params if needed
@@ -48,9 +56,16 @@ const BrowseScreen: React.FC = () => {
   }, [route.params, handleSearch]);
 
   const handleVideoPress = useCallback((video: Video) => {
-    setSelectedVideo(video);
-    setModalVisible(true);
-  }, []);
+    // Navigate to VideoViewerScreen instead of opening drawer directly
+    try {
+      navigation.navigate('VideoViewer', { video });
+    } catch (error) {
+      console.error('Failed to navigate to VideoViewer:', error);
+      // Fallback to drawer if navigation fails
+      setSelectedVideo(video);
+      setModalVisible(true);
+    }
+  }, [navigation]);
 
   const extractVideoIdFromInput = useCallback((input: string): string | null => {
     const trimmed = input.trim();
@@ -99,20 +114,21 @@ const BrowseScreen: React.FC = () => {
       {loading ? (
         <LoadingAnimation type="search" visible={true} />
       ) : error ? (
-        <View style={{ alignItems: 'center' }}>
+        <View style={styles.errorContainer}>
+          <Text style={[styles.errorTitle, { color: theme.colors.error }]}>Oops! Something went wrong</Text>
           <Text style={[styles.errorText, { color: theme.colors.error }]}>{error}</Text>
-          <Text style={{ color: theme.colors.textSecondary, marginTop: 8 }}>Pull to retry</Text>
+          <Text style={[styles.errorHint, { color: theme.colors.textSecondary }]}>Pull down to retry</Text>
         </View>
       ) : (
-        <View style={{ alignItems: 'center', opacity: 0.7 }}>
-          <Youtube size={64} color={theme.colors.textSecondary} strokeWidth={1} />
+        <View style={styles.emptyStateContent}>
+          <Youtube size={72} color={theme.colors.primary} strokeWidth={1.5} />
           <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
-            {mode === 'search' ? 'Search YouTube' : 'Paste a Link'}
+            {mode === 'search' ? 'Discover & Download' : 'Quick Download'}
           </Text>
           <Text style={[styles.emptySubtext, { color: theme.colors.textSecondary }]}>
             {mode === 'search'
-              ? 'Find videos to download'
-              : 'Paste a YouTube URL to download directly'}
+              ? 'Search for your favorite videos and download them in your preferred quality'
+              : 'Paste any YouTube URL to download instantly'}
           </Text>
         </View>
       )}
@@ -151,7 +167,7 @@ const BrowseScreen: React.FC = () => {
               <Search size={20} color={theme.colors.textSecondary} />
               <TextInput
                 style={styles.input}
-                placeholder="Search videos..."
+                placeholder="Search for videos, channels, playlists..."
                 placeholderTextColor={theme.colors.textSecondary}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
@@ -164,7 +180,7 @@ const BrowseScreen: React.FC = () => {
                   style={styles.goButton}
                   activeOpacity={0.8}
                 >
-                  <ArrowRight size={22} color={theme.colors.background} />
+                  <ArrowRight size={22} color="#FFFFFF" />
                 </TouchableOpacity>
               )}
             </View>
@@ -178,8 +194,15 @@ const BrowseScreen: React.FC = () => {
               refreshControl={
                 <RefreshControl
                   refreshing={loading && results.length > 0}
-                  onRefresh={() => handleSearch(searchQuery)}
+                  onRefresh={() => {
+                    // Only refresh if there's a valid search query
+                    if (searchQuery.trim()) {
+                      handleSearch(searchQuery);
+                    }
+                    // If no query, do nothing (prevent error)
+                  }}
                   tintColor={theme.colors.primary}
+                  enabled={searchQuery.trim().length > 0 || results.length > 0}
                 />
               }
               onEndReached={() => {
@@ -193,20 +216,30 @@ const BrowseScreen: React.FC = () => {
               colors={isDark ? ['#2A2A2A', '#1A1A1A'] : ['#F0F0F0', '#FFFFFF']}
               style={styles.urlCard}
             >
-              <Text style={styles.urlTitle}>Direct Download</Text>
-              <Text style={styles.urlSubtitle}>Paste a YouTube link below</Text>
+              <View style={styles.urlHeader}>
+                <LinkIcon size={28} color={theme.colors.primary} strokeWidth={2} />
+                <Text style={styles.urlTitle}>Direct Download</Text>
+                <Text style={styles.urlSubtitle}>
+                  Enter any YouTube URL or video ID to download instantly
+                </Text>
+              </View>
 
-              <View style={[styles.inputWrapper, { marginTop: 24 }]}>
-                <LinkIcon size={20} color={theme.colors.textSecondary} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="https://youtu.be/..."
-                  placeholderTextColor={theme.colors.textSecondary}
-                  value={youtubeUrl}
-                  onChangeText={setYoutubeUrl}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
+              <View style={styles.urlInputSection}>
+                <Text style={[styles.inputLabel, { color: theme.colors.text }]}>
+                  YouTube URL or Video ID
+                </Text>
+                <View style={[styles.inputWrapper, { marginTop: 12 }]}>
+                  <LinkIcon size={20} color={theme.colors.textSecondary} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="https://youtu.be/... or paste video ID"
+                    placeholderTextColor={theme.colors.textSecondary}
+                    value={youtubeUrl}
+                    onChangeText={setYoutubeUrl}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
               </View>
 
               <TouchableOpacity
@@ -271,6 +304,7 @@ const getStyles = (theme: any, isDark: boolean) => StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: theme.colors.textSecondary,
+    letterSpacing: 0.2,
   },
   activeTabText: {
     color: theme.colors.background,
@@ -317,36 +351,83 @@ const getStyles = (theme: any, isDark: boolean) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingTop: 100,
+    paddingHorizontal: 32,
+  },
+  emptyStateContent: {
+    alignItems: 'center',
+    opacity: 0.85,
+    maxWidth: 320,
   },
   emptyTitle: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '700',
-    marginTop: 16,
-    marginBottom: 8,
+    marginTop: 20,
+    marginBottom: 12,
+    textAlign: 'center',
+    letterSpacing: 0.3,
   },
   emptySubtext: {
-    fontSize: 14,
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+    paddingHorizontal: 16,
+  },
+  errorContainer: {
+    alignItems: 'center',
+    maxWidth: 320,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
     textAlign: 'center',
   },
   errorText: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginBottom: 12,
+    lineHeight: 20,
+  },
+  errorHint: {
+    fontSize: 14,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
   urlCard: {
-    padding: 24,
+    padding: 28,
     borderRadius: 24,
     borderWidth: 1,
     borderColor: theme.colors.border,
   },
-  urlTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: theme.colors.text,
+  urlHeader: {
+    alignItems: 'center',
     marginBottom: 8,
   },
+  urlTitle: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: theme.colors.text,
+    marginTop: 16,
+    marginBottom: 10,
+    textAlign: 'center',
+    letterSpacing: 0.4,
+  },
   urlSubtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: theme.colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    paddingHorizontal: 8,
+  },
+  urlInputSection: {
+    marginTop: 8,
+  },
+  inputLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 4,
+    letterSpacing: 0.2,
   },
   downloadButton: {
     marginTop: 24,
@@ -362,8 +443,9 @@ const getStyles = (theme: any, isDark: boolean) => StyleSheet.create({
   },
   downloadButtonText: {
     color: '#FFF',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
 });
 

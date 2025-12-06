@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   SectionList,
 } from 'react-native';
+import { useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useNavigation } from '@react-navigation/native';
@@ -28,6 +29,9 @@ import RNFS from 'react-native-fs';
 const DownloadsScreen: React.FC = () => {
   const { theme, isDark } = useTheme();
   const navigation = useNavigation();
+  const { width, height } = useWindowDimensions();
+  const isTablet = width >= 600;
+  const isLandscape = width > height;
   const {
     downloads,
     cancelDownload,

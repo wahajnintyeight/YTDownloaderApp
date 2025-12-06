@@ -5,8 +5,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   Image,
-  Dimensions,
 } from 'react-native';
+import { useWindowDimensions } from 'react-native';
 import { Video } from '../types/video';
 import { useTheme } from '../hooks/useTheme';
 import { formatDuration, formatViewCount } from '../utils/formatters';
@@ -16,14 +16,16 @@ interface VideoResultCardProps {
   onPress: (video: Video) => void;
 }
 
-const { width: screenWidth } = Dimensions.get('window');
-const CARD_MARGIN = 16;
-const THUMBNAIL_WIDTH = 120;
-const THUMBNAIL_HEIGHT = (THUMBNAIL_WIDTH * 9) / 16; // 16:9 aspect ratio
-
 const VideoResultCard: React.FC<VideoResultCardProps> = ({ video, onPress }) => {
   const { theme } = useTheme();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [imageError, setImageError] = useState(false);
+  
+  // Responsive thumbnail sizing
+  const isTablet = screenWidth >= 600;
+  const isLandscape = screenWidth > screenHeight;
+  const THUMBNAIL_WIDTH = isTablet ? (isLandscape ? 180 : 200) : 120;
+  const THUMBNAIL_HEIGHT = (THUMBNAIL_WIDTH * 9) / 16; // 16:9 aspect ratio
 
   const handlePress = () => {
     onPress(video);
@@ -57,6 +59,7 @@ const VideoResultCard: React.FC<VideoResultCardProps> = ({ video, onPress }) => 
       overflow: 'hidden',
       backgroundColor: theme.colors.border,
       marginRight: theme.spacing.sm,
+      flexShrink: 0, // Prevent thumbnail from shrinking
     },
     thumbnail: {
       width: '100%',
@@ -92,14 +95,11 @@ const VideoResultCard: React.FC<VideoResultCardProps> = ({ video, onPress }) => 
       justifyContent: 'space-between',
     },
     title: {
-      fontSize: 16,
       fontWeight: '600',
       color: theme.colors.text,
-      lineHeight: 20,
       marginBottom: theme.spacing.xs,
     },
     channelName: {
-      fontSize: 14,
       color: theme.colors.textSecondary,
       marginBottom: theme.spacing.xs,
     },
@@ -141,11 +141,16 @@ const VideoResultCard: React.FC<VideoResultCardProps> = ({ video, onPress }) => 
       </View>
 
       <View style={styles.contentContainer}>
-        <Text style={styles.title} numberOfLines={2}>
+        <Text style={[styles.title, {
+          fontSize: isTablet ? 18 : 16,
+          lineHeight: isTablet ? 24 : 20,
+        }]} numberOfLines={2}>
           {video.title}
         </Text>
         
-        <Text style={styles.channelName} numberOfLines={1}>
+        <Text style={[styles.channelName, {
+          fontSize: isTablet ? 16 : 14,
+        }]} numberOfLines={1}>
           {video.channelName}
         </Text>
         

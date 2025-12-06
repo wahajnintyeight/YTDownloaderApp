@@ -8,6 +8,7 @@ import {
   Platform,
   StatusBar,
 } from 'react-native';
+import { useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useDownloadManager } from '../hooks/useDownloadManager';
@@ -22,6 +23,9 @@ export const SettingsScreen: React.FC = () => {
   const { theme, isDark } = useTheme();
   const navigation = useNavigation<any>();
   const { showDialog } = useDialog();
+  const { width, height } = useWindowDimensions();
+  const isTablet = width >= 600;
+  const isLandscape = width > height;
   const {
     downloadPath,
     loadingPath,

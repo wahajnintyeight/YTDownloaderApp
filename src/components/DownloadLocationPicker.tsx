@@ -53,24 +53,42 @@ const DownloadLocationPicker: React.FC<DownloadLocationPickerProps> = ({
         'Failed to open folder picker. Please try again.',
         [{ text: 'OK', onPress: onCancel }]
       );
+    } finally {
+      // Ensure processing flag is reset
+      isProcessingRef.current = false;
     }
   }, [onSelect, onCancel]);
 
   // Gate to avoid reopening the native picker multiple times in a row
   const hasPromptedRef = useRef(false);
+  const isProcessingRef = useRef(false);
 
   useEffect(() => {
     if (Platform.OS === 'android') {
-      if (visible && !hasPromptedRef.current) {
+      if (visible && !hasPromptedRef.current && !isProcessingRef.current) {
         hasPromptedRef.current = true;
+        isProcessingRef.current = true;
         // Defer to next tick to avoid re-entrancy during render
-        setTimeout(() => {
-          handleNativeAndroidPicker();
-        }, 0);
+        const timeoutId = setTimeout(() => {
+          handleNativeAndroidPicker().finally(() => {
+            isProcessingRef.current = false;
+          });
+        }, 100);
+        
+        return () => {
+          clearTimeout(timeoutId);
+        };
       }
       if (!visible) {
-        // Reset gate when modal is hidden
-        hasPromptedRef.current = false;
+        // Reset gate when modal is hidden, but wait a bit to prevent rapid re-triggers
+        const timeoutId = setTimeout(() => {
+          hasPromptedRef.current = false;
+          isProcessingRef.current = false;
+        }, 500);
+        
+        return () => {
+          clearTimeout(timeoutId);
+        };
       }
     } else if (visible) {
       // Fallback to custom picker for non-Android platforms

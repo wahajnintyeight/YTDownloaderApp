@@ -49,11 +49,10 @@ const SECONDARY_QUALITIES: VideoQuality[] = [
 ];
 const BITRATE_OPTIONS = ['128k', '192k', '256k', '320k'];
 
-// <CHANGE> Responsive drawer height based on screen dimensions
-const getDrawerHeight = (screenHeight: number, screenWidth: number): number => {
-  const isLandscape = screenWidth > screenHeight;
-  if (isLandscape) return screenHeight * 0.95;
-  return screenHeight * 0.85;
+// <CHANGE> Drawer takes half the screen space
+const getDrawerHeight = (screenHeight: number): number => {
+  // Always use 50% of screen height
+  return screenHeight * 0.5;
 };
 
 const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
@@ -61,19 +60,15 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
   video,
   onClose,
 }) => {
+  // ALL HOOKS MUST BE CALLED FIRST, IN THE SAME ORDER EVERY RENDER
   const { theme } = useTheme();
   const { startDownload } = useDownloads();
   const { showSuccess, showError } = useDialog();
   const { downloadLocation, setDownloadLocation, isLocationSet } =
     useSettings();
-
-  // <CHANGE> Use useWindowDimensions for responsive sizing
   const { width, height } = useWindowDimensions();
-  const isLandscape = width > height;
-  const isSmallScreen = width < 380;
-  const isLargeScreen = width > 500;
-  const DRAWER_HEIGHT = getDrawerHeight(height, width);
 
+  // ALL useState hooks must come before useMemo/useCallback
   const [selectedFormat, setSelectedFormat] = useState<VideoFormat>('mp4');
   const [selectedQuality, setSelectedQuality] = useState<VideoQuality>('720p');
   const [selectedBitrate, setSelectedBitrate] = useState('320k');
@@ -81,6 +76,22 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
   const [showAllFormats, setShowAllFormats] = useState(false);
   const [showAllQualities, setShowAllQualities] = useState(false);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
+
+  // Calculate responsive values AFTER all hooks
+  const isLandscape = width > height;
+  const isSmallScreen = width < 380;
+  const isTablet = width >= 600; // Tablets are typically 600px+ width
+  
+  // Recalculate drawer height on rotation - useMemo AFTER useState
+  const DRAWER_HEIGHT = useMemo(() => getDrawerHeight(height), [height]);
+  
+  // Responsive thumbnail dimensions based on screen size and orientation
+  const thumbnailAspectRatio = 16 / 9;
+  const thumbnailMaxWidth = isTablet 
+    ? (isLandscape ? width * 0.25 : width * 0.35)
+    : (isLandscape ? width * 0.3 : width * 0.4);
+  const thumbnailWidth = Math.min(thumbnailMaxWidth, isSmallScreen ? 140 : isTablet ? 250 : 200);
+  const thumbnailHeight = thumbnailWidth / thumbnailAspectRatio;
 
   const translateY = useRef(new Animated.Value(DRAWER_HEIGHT)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -156,10 +167,12 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
   const panResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: (_, gestureState) =>
-          Math.abs(gestureState.dy) > Math.abs(gestureState.dx) &&
-          Math.abs(gestureState.dy) > 5,
+        onStartShouldSetPanResponder: () => true, // Always capture on start
+        onMoveShouldSetPanResponder: (_, gestureState) => {
+          // Capture if dragging down and vertical movement is dominant
+          return gestureState.dy > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+        },
+        onPanResponderTerminationRequest: () => false, // Don't allow termination
         onPanResponderGrant: () => {
           lastGestureY.current = (translateY as any)._value;
 
@@ -170,6 +183,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
           }).start();
         },
         onPanResponderMove: (_, gestureState) => {
+          // Allow both up and down, but prefer downward for closing
           const newY = Math.max(
             0,
             Math.min(DRAWER_HEIGHT, lastGestureY.current + gestureState.dy),
@@ -228,10 +242,10 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
     [translateY, backdropOpacity, dragHandleScale, onClose, DRAWER_HEIGHT],
   );
 
-  const handleDownload = useCallback(async () => {
+  const handleDownload = useCallback(async (skipLocationCheck = false) => {
     if (!video) return;
 
-    if (!isLocationSet) {
+    if (!skipLocationCheck && !isLocationSet) {
       setShowLocationPicker(true);
       return;
     }
@@ -305,10 +319,14 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
       try {
         await setDownloadLocation(path);
         setShowLocationPicker(false);
-        setTimeout(() => handleDownload(), 100);
+        // Wait a bit longer to ensure state is updated, then skip location check
+        setTimeout(() => {
+          handleDownload(true); // Pass true to skip location check
+        }, 300);
       } catch (error) {
         console.error('Error setting location:', error);
         showError('Error', 'Failed to set download location');
+        setShowLocationPicker(false);
       }
     },
     [setDownloadLocation, handleDownload, showError],
@@ -333,48 +351,70 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
   const isAudioFormat = selectedFormat === 'mp3';
   const shouldShowQualitySelector = !isAudioFormat;
 
-  // <CHANGE> Responsive option button component
+  // <CHANGE> Tab-style button component with better space utilization and tablet support
   const OptionButton: React.FC<{
     label: string;
     isSelected: boolean;
     onPress: () => void;
-  }> = ({ label, isSelected, onPress }) => (
-    <TouchableOpacity
-      style={[
-        optionButtonStyles.button,
-        {
-          backgroundColor: isSelected
-            ? theme.colors.secondary
-            : theme.colors.surface,
-          borderColor: isSelected
-            ? theme.colors.secondary
-            : theme.colors.border,
-          paddingVertical: isSmallScreen ? 8 : 10,
-          paddingHorizontal: isSmallScreen ? 10 : 14,
-        },
-      ]}
-      onPress={onPress}
-    >
-      <Text
+  }> = ({ label, isSelected, onPress }) => {
+    // Calculate dynamic width based on screen size, orientation, and label length
+    const baseWidth = isSmallScreen ? 60 : isTablet ? 90 : 70;
+    const labelLength = label.length;
+    const dynamicWidth = Math.max(baseWidth, labelLength * (isSmallScreen ? 8 : isTablet ? 11 : 9));
+    
+    // Responsive max width based on device type and orientation
+    const getMaxWidth = () => {
+      if (isTablet) {
+        return isLandscape ? '24%' : '30%'; // More columns on tablets
+      }
+      return isSmallScreen ? '48%' : '32%';
+    };
+    
+    return (
+      <TouchableOpacity
         style={[
-          optionButtonStyles.text,
+          optionButtonStyles.button,
           {
-            color: isSelected
-              ? theme.colors.background === '#FFFFFF'
-                ? '#000000'
-                : '#FFFFFF'
-              : theme.colors.text,
-            fontWeight: isSelected ? '600' : '400',
-            fontSize: isSmallScreen ? 12 : 14,
+            backgroundColor: isSelected
+              ? theme.colors.primary
+              : theme.colors.background,
+            borderColor: isSelected
+              ? theme.colors.primary
+              : theme.colors.border,
+            paddingVertical: isSmallScreen ? 10 : isTablet ? 14 : 12,
+            paddingHorizontal: isSmallScreen ? 14 : isTablet ? 20 : 16,
+            minWidth: dynamicWidth,
+            flex: isSmallScreen ? 0 : isTablet ? 0 : 1,
+            maxWidth: getMaxWidth(),
+            shadowColor: isSelected ? theme.colors.primary : 'transparent',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: isSelected ? 0.25 : 0,
+            shadowRadius: 4,
+            elevation: isSelected ? 2 : 0,
           },
         ]}
+        onPress={onPress}
+        activeOpacity={0.7}
       >
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
+        <Text
+          style={[
+            optionButtonStyles.text,
+            {
+              color: isSelected ? '#FFFFFF' : theme.colors.text,
+              fontWeight: isSelected ? '700' : '600',
+              fontSize: isSmallScreen ? 13 : isTablet ? 16 : 14,
+              letterSpacing: 0.2,
+            },
+          ]}
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
 
-  // <CHANGE> Responsive selector section component
+  // <CHANGE> Tab-based selector section with better space utilization
   const SelectorSection: React.FC<{
     title: string;
     options: string[];
@@ -383,6 +423,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
     showExpand: boolean;
     expanded: boolean;
     onToggleExpand: () => void;
+    allOptions?: string[]; // All available options for count calculation
   }> = ({
     title,
     options,
@@ -391,29 +432,54 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
     showExpand,
     expanded,
     onToggleExpand,
-  }) => (
-      <View style={[selectorStyles.container, { marginBottom: isSmallScreen ? 12 : 16 }]}>
-        <View style={selectorStyles.header}>
-          <Text style={[selectorStyles.title, { color: theme.colors.text, fontSize: isSmallScreen ? 14 : 16 }]}>
+    allOptions,
+  }) => {
+    const totalOptions = allOptions || options;
+    const hiddenCount = totalOptions.length - options.length;
+    
+    return (
+      <View style={[selectorStyles.container, { 
+        marginBottom: isSmallScreen ? 20 : isTablet ? 28 : 24,
+        paddingVertical: isSmallScreen ? 12 : isTablet ? 20 : 16,
+        paddingHorizontal: isSmallScreen ? 12 : isTablet ? 20 : 16,
+        backgroundColor: theme.colors.surface,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: theme.colors.border,
+      }]}>
+        <View style={[selectorStyles.header, { marginBottom: isSmallScreen ? 12 : isTablet ? 18 : 16 }]}>
+          <Text style={[selectorStyles.title, { 
+            color: theme.colors.text, 
+            fontSize: isSmallScreen ? 15 : isTablet ? 20 : 17,
+            fontWeight: '700',
+            letterSpacing: 0.3,
+          }]}>
             {title}
           </Text>
-          {showExpand && (
+          {showExpand && hiddenCount > 0 && (
             <TouchableOpacity
-              style={selectorStyles.expandButton}
+              style={[selectorStyles.expandButton, {
+                paddingHorizontal: isSmallScreen ? 10 : 12,
+                paddingVertical: isSmallScreen ? 6 : 8,
+              }]}
               onPress={onToggleExpand}
+              activeOpacity={0.7}
             >
               <Text
                 style={[
                   selectorStyles.expandText,
-                  { color: theme.colors.secondary, fontSize: isSmallScreen ? 11 : 13 },
+                  { color: theme.colors.primary, fontSize: isSmallScreen ? 13 : 14, fontWeight: '600' },
                 ]}
               >
-                {expanded ? 'Show Less' : `+${options.length - 3} More`}
+                {expanded ? 'Less' : `+${hiddenCount}`}
               </Text>
             </TouchableOpacity>
           )}
         </View>
-        <View style={[selectorStyles.options, { gap: isSmallScreen ? 8 : 10 }]}>
+        <View style={[selectorStyles.options, { 
+          gap: isSmallScreen ? 10 : isTablet ? 14 : 12,
+          flexWrap: 'wrap',
+        }]}>
           {options.map(option => (
             <OptionButton
               key={option}
@@ -425,6 +491,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
         </View>
       </View>
     );
+  };
 
   if (!video) return null;
 
@@ -463,40 +530,84 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
           <Animated.View
             style={[
               drawerStyles.drawerContainer,
-              { transform: [{ translateY }] },
-              { maxHeight: DRAWER_HEIGHT },
+              { 
+                transform: [{ translateY }],
+                height: DRAWER_HEIGHT,
+                maxHeight: DRAWER_HEIGHT,
+                overflow: 'hidden', // Keep content within drawer bounds
+              },
             ]}
-            {...panResponder.panHandlers}
           >
-            <Animated.View
-              style={[
-                drawerStyles.dragHandle,
-                { transform: [{ scaleX: dragHandleScale }] },
-                { marginTop: isSmallScreen ? 6 : 8 },
-              ]}
-            />
+            {/* Draggable header area - handle + header */}
+            <View {...panResponder.panHandlers}>
+              <Animated.View
+                style={[
+                  drawerStyles.dragHandle,
+                  { transform: [{ scaleX: dragHandleScale }] },
+                  { marginTop: isSmallScreen ? 6 : 8 },
+                ]}
+              />
 
-            <View style={[drawerStyles.header, { paddingHorizontal: isSmallScreen ? 16 : 20, paddingVertical: isSmallScreen ? 12 : 16 }]}>
-              <Text style={[drawerStyles.headerTitle, { fontSize: isSmallScreen ? 18 : 20 }]}>Download Video</Text>
+              <View style={[drawerStyles.header, { 
+                paddingHorizontal: isSmallScreen ? 16 : isTablet ? 24 : 20, 
+                paddingVertical: isSmallScreen ? 12 : isTablet ? 18 : 16 
+              }]}>
+                <Text style={[drawerStyles.headerTitle, { 
+                  fontSize: isSmallScreen ? 18 : isTablet ? 24 : 20 
+                }]}>Download Video</Text>
+              </View>
             </View>
 
             <ScrollView
-              style={drawerStyles.content}
-              showsVerticalScrollIndicator={false}
-              scrollEnabled={!isLandscape || height < 500}
-              contentContainerStyle={[{ paddingHorizontal: isSmallScreen ? 16 : 20, paddingBottom: isSmallScreen ? 12 : 16 }]}
+              style={[drawerStyles.content, { flex: 1 }]}
+              showsVerticalScrollIndicator={true}
+              scrollEnabled={true}
+              nestedScrollEnabled={true}
+              bounces={false}
+              overScrollMode="never"
+              contentContainerStyle={{ 
+                paddingHorizontal: isSmallScreen ? 16 : isTablet ? 24 : 20, 
+                paddingBottom: isSmallScreen ? 40 : isTablet ? 60 : 50,
+                paddingTop: isSmallScreen ? 8 : isTablet ? 16 : 12,
+              }}
             >
-              <View style={[drawerStyles.videoInfo, { marginBottom: isSmallScreen ? 16 : 20, height: isSmallScreen ? 80 : 100 }]}>
+              <View style={[drawerStyles.videoInfo, { 
+                marginBottom: isSmallScreen ? 20 : isTablet ? 28 : 24, 
+                minHeight: thumbnailHeight,
+                backgroundColor: theme.colors.surface,
+                borderRadius: 16,
+                padding: isSmallScreen ? 12 : isTablet ? 20 : 16,
+                borderWidth: 1,
+                borderColor: theme.colors.border,
+                overflow: 'hidden', // Ensure content stays within bounds
+              }]}>
                 <Image
                   source={{ uri: video.thumbnailUrl }}
-                  style={[drawerStyles.thumbnail, { height: isSmallScreen ? 80 : 100, width: isSmallScreen ? 140 : 180 }]}
+                  style={[drawerStyles.thumbnail, { 
+                    height: thumbnailHeight, 
+                    width: thumbnailWidth,
+                    borderRadius: 12,
+                    flexShrink: 0, // Prevent thumbnail from shrinking
+                  }]}
                   resizeMode="cover"
                 />
-                <View style={[drawerStyles.videoDetails, { marginLeft: isSmallScreen ? 8 : 12 }]}>
-                  <Text style={[drawerStyles.videoTitle, { fontSize: isSmallScreen ? 13 : 15 }]} numberOfLines={2}>
+                <View style={[drawerStyles.videoDetails, { 
+                  marginLeft: isSmallScreen ? 12 : isTablet ? 20 : 16, 
+                  flex: 1,
+                  minWidth: 0, // Allow text to shrink properly
+                }]}>
+                  <Text style={[drawerStyles.videoTitle, { 
+                    fontSize: isSmallScreen ? 14 : isTablet ? 18 : 16,
+                    fontWeight: '700',
+                    lineHeight: isSmallScreen ? 20 : isTablet ? 26 : 22,
+                    marginBottom: isSmallScreen ? 6 : isTablet ? 10 : 8,
+                  }]} numberOfLines={isTablet ? 4 : 3}>
                     {video.title}
                   </Text>
-                  <Text style={[drawerStyles.videoChannel, { fontSize: isSmallScreen ? 11 : 13 }]} numberOfLines={1}>
+                  <Text style={[drawerStyles.videoChannel, { 
+                    fontSize: isSmallScreen ? 12 : isTablet ? 15 : 14,
+                    opacity: 0.8,
+                  }]} numberOfLines={1}>
                     {video.channelName}
                   </Text>
                 </View>
@@ -510,6 +621,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
                 showExpand={SECONDARY_FORMATS.length > 0}
                 expanded={showAllFormats}
                 onToggleExpand={() => setShowAllFormats(!showAllFormats)}
+                allOptions={[...PRIMARY_FORMATS, ...SECONDARY_FORMATS]}
               />
 
               {shouldShowQualitySelector && (
@@ -525,10 +637,12 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
                   showExpand={SECONDARY_QUALITIES.length > 0}
                   expanded={showAllQualities}
                   onToggleExpand={() => setShowAllQualities(!showAllQualities)}
+                  allOptions={[...PRIMARY_QUALITIES, ...SECONDARY_QUALITIES]}
                 />
               )}
 
-              {selectedFormat === 'mp3' && (
+              {/* Bitrate selection hidden for now */}
+              {false && selectedFormat === 'mp3' && (
                 <SelectorSection
                   title="Bitrate (Audio Quality)"
                   options={BITRATE_OPTIONS}
@@ -540,14 +654,23 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
                 />
               )}
 
-              <View style={[drawerStyles.bottomSection, { marginTop: isSmallScreen ? 8 : 12 }]}>
+              <View style={[drawerStyles.bottomSection, { 
+                marginTop: isSmallScreen ? 16 : isTablet ? 24 : 20,
+                paddingTop: isSmallScreen ? 12 : isTablet ? 20 : 16,
+                borderTopWidth: 1,
+                borderTopColor: theme.colors.border,
+              }]}>
                 {isDownloading ? (
                   <View style={drawerStyles.loadingContainer}>
                     <LoadingAnimation type="download" visible={true} />
                     <Text
                       style={[
                         drawerStyles.loadingText,
-                        { color: theme.colors.textSecondary, fontSize: isSmallScreen ? 14 : 16 },
+                        { 
+                          color: theme.colors.textSecondary, 
+                          fontSize: isSmallScreen ? 14 : isTablet ? 18 : 16, 
+                          marginTop: 12 
+                        },
                       ]}
                     >
                       Adding to queue...
@@ -557,18 +680,28 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
                   <TouchableOpacity
                     style={[
                       drawerStyles.downloadButton,
-                      { backgroundColor: theme.colors.secondary, paddingVertical: isSmallScreen ? 12 : 14 },
+                      { 
+                        backgroundColor: theme.colors.primary, 
+                        paddingVertical: isSmallScreen ? 16 : isTablet ? 20 : 18,
+                        borderRadius: 16,
+                        shadowColor: theme.colors.primary,
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.3,
+                        shadowRadius: 8,
+                        elevation: 5,
+                      },
                     ]}
-                    onPress={handleDownload}
+                    onPress={() => handleDownload()}
                     disabled={isDownloading}
+                    activeOpacity={0.8}
                   >
-                    <Text style={[drawerStyles.downloadButtonText, { fontSize: isSmallScreen ? 14 : 16 }]}>
-                      {`Download ${selectedFormat.toUpperCase()} - ${isAudioFormat
-                        ? selectedBitrate.toUpperCase()
-                        : selectedQuality === 'audio_only'
-                          ? 'Audio Only'
-                          : selectedQuality.toUpperCase()
-                        }`}
+                    <Text style={[drawerStyles.downloadButtonText, { 
+                      fontSize: isSmallScreen ? 15 : isTablet ? 19 : 17,
+                      fontWeight: '700',
+                      color: '#FFFFFF',
+                      letterSpacing: 0.5,
+                    }]}>
+                      {`Download ${selectedFormat.toUpperCase()}${!isAudioFormat && selectedQuality !== 'audio_only' ? ` • ${selectedQuality.toUpperCase()}` : ''}`}
                     </Text>
                   </TouchableOpacity>
                 )}
