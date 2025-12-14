@@ -17,6 +17,8 @@ import { Video } from '../types/video';
 import DownloadDrawer from '../components/DownloadDrawer';
 import VideoResultCard from '../components/VideoResultCard';
 import { apiClient } from '../services/apiClient';
+import { useScreenTracking } from '../hooks/useScreenTracking';
+import { ScreenNames } from '../constants/ScreenNames';
 
 interface VideoViewerParams {
   video: Video;
@@ -88,6 +90,9 @@ const VideoViewerScreen: React.FC = () => {
   const { video, youtubeUrl } = route.params;
   const [downloadVisible, setDownloadVisible] = useState(false);
   const [isReady, setIsReady] = useState(false);
+
+  // Track screen view in Firebase Analytics
+  useScreenTracking(ScreenNames.VideoViewer);
   
   // Related videos state
   const [relatedVideos, setRelatedVideos] = useState<Video[]>([]);

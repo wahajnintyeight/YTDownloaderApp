@@ -16,6 +16,8 @@ import LinearGradient from 'react-native-linear-gradient';
 import { Video } from '../types/video';
 import { useTheme } from '../hooks/useTheme';
 import { useSearch } from '../hooks/useSearch';
+import { useScreenTracking } from '../hooks/useScreenTracking';
+import { ScreenNames } from '../constants/ScreenNames';
 import VideoResultCard from '../components/VideoResultCard';
 import LoadingAnimation from '../components/LoadingAnimation';
 import DownloadDrawer from '../components/DownloadDrawer';
@@ -29,6 +31,9 @@ const BrowseScreen: React.FC = () => {
   const route = useRoute<BrowseScreenRouteProp>();
   const navigation = useNavigation<any>();
   const { results, loading, error, hasMore, search, loadMore } = useSearch();
+
+  // Track screen view in Firebase Analytics
+  useScreenTracking(ScreenNames.Browse);
 
   // All hooks must be called unconditionally at the top
 

@@ -14,6 +14,8 @@ import { useNavigation } from '@react-navigation/native';
 import { useDownloadManager } from '../hooks/useDownloadManager';
 import { useTheme } from '../hooks/useTheme';
 import { useDialog } from '../hooks/useDialog';
+import { useScreenTracking } from '../hooks/useScreenTracking';
+import { ScreenNames } from '../constants/ScreenNames';
 import { FolderIcon, ExternalLinkIcon, ChevronLeftIcon, SearchIcon } from '../components/icons/ModernIcons';
 import { openDirectory, DirectoryOpenResult } from '../utils/openFile';
 import { getSettingsScreenStyles } from './SettingsScreen.styles';
@@ -33,6 +35,9 @@ export const SettingsScreen: React.FC = () => {
     resetDownloadPath,
     getDefaultDownloadPath,
   } = useDownloadManager();
+
+  // Track screen view in Firebase Analytics
+  useScreenTracking(ScreenNames.Settings);
 
   const handleChangeDownloadPath = useCallback(async () => {
     try {
@@ -384,7 +389,7 @@ export const SettingsScreen: React.FC = () => {
           </View>
         </View>
 
-        <View style={styles.section}>
+        {/* <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <SearchIcon
               size={20}
@@ -412,7 +417,7 @@ export const SettingsScreen: React.FC = () => {
               • Perfect for testing multiple downloads, queuing, and load testing
             </Text>
           </View>
-        </View>
+        </View> */}
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>

@@ -1,6 +1,8 @@
-# YT Downloader 🎬
+# ConvertYT Go 🚀
 
-A modern, feature-rich YouTube video downloader built with React Native and TypeScript. Search, preview, and download YouTube videos with a beautiful, intuitive interface.
+**Convert YouTube videos, your way.**
+
+A modern, feature-rich video downloader built with React Native and TypeScript. Search, preview, and download videos with a beautiful, intuitive interface.
 
 ## ✨ Features
 
@@ -53,6 +55,8 @@ A modern, feature-rich YouTube video downloader built with React Native and Type
    git clone https://github.com/wahajnintyeight/YTDownloaderApp.git
    cd YTDownloaderApp
    ```
+   
+   *Note: Repository name may still reference the old name, but the app is now branded as **ConvertYT Go**.*
 
 2. **Install dependencies**
    ```bash
@@ -219,6 +223,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Built with ❤️ using React Native and TypeScript**
+**ConvertYT Go** – Built with ❤️ using React Native and TypeScript
 
 *Ready for 2025 with modern design, robust architecture, and exceptional user experience.*
+
+---
+
+**ConvertYT Go** – Convert YouTube videos, your way.

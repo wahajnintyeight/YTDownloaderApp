@@ -13,6 +13,8 @@ import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../hooks/useTheme';
 import { useDownloads } from '../hooks/useDownloads';
 import { useDownloadManager } from '../hooks/useDownloadManager';
+import { useScreenTracking } from '../hooks/useScreenTracking';
+import { ScreenNames } from '../constants/ScreenNames';
 import { Download, DownloadStatus } from '../types/video';
 import SwipeableDownloadItem from '../components/SwipeableDownloadItem';
 import DownloadItemMenu from '../components/DownloadItemMenu';
@@ -41,6 +43,9 @@ const DownloadsScreen: React.FC = () => {
   } = useDownloads();
   const { downloadPath, loadingPath } = useDownloadManager();
   const { showDialog } = useDialog();
+
+  // Track screen view in Firebase Analytics
+  useScreenTracking(ScreenNames.Downloads);
 
   // Debug: Log when downloadPath changes
   useEffect(() => {

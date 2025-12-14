@@ -1,6 +1,6 @@
 /**
- * YouTube Video Downloader App
- * React Native implementation without Expo
+ * ConvertYT Go - Convert YouTube videos, your way
+ * Modern video downloader built with React Native and TypeScript
  *
  * @format
  */
@@ -13,7 +13,7 @@ import { DialogProvider } from './src/contexts/DialogContext';
 import { SettingsProvider } from './src/contexts/SettingsContext';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { logger } from './src/utils/logger';
-import { downloadService } from './src/services';
+import { downloadService, analyticsService } from './src/services';
 import { backgroundTaskManager } from './src/utils/backgroundTask';
 
 // Enable console logs in development
@@ -47,6 +47,11 @@ if (__DEV__) {
 function App(): React.JSX.Element {
   useEffect(() => {
     logger.info('✅ App mounted successfully');
+    
+    // Initialize Firebase Analytics
+    analyticsService.initialize().catch(error => {
+      logger.error('Failed to initialize Firebase Analytics:', error);
+    });
     
     // Initialize background task support
     backgroundTaskManager.initialize().catch(error => {

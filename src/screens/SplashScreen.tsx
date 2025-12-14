@@ -6,6 +6,7 @@ import {
   Animated,
   ActivityIndicator,
   StatusBar,
+  Image,
 } from 'react-native';
 import { useTheme } from '../hooks/useTheme';
 
@@ -63,10 +64,9 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
       marginBottom: theme.spacing.xl,
     },
     logo: {
-      fontSize: 48,
-      fontWeight: '700',
-      color: theme.colors.secondary,
-      marginBottom: theme.spacing.sm,
+      width: 300,
+      height: 300,
+      marginBottom: theme.spacing.md,
     },
     subtitle: {
       fontSize: 18,
@@ -101,7 +101,11 @@ const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
           },
         ]}
       >
-        <Text style={styles.logo}>YT Downloader</Text>
+        <Image
+          source={require('../assets/logo_transparentbg.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
         <Text style={styles.subtitle}>
           Download your favorite videos{'\n'}in high quality
         </Text>

@@ -61,14 +61,15 @@ class NotificationService {
         body: `${body} (${progress}%)`,
         android: {
           channelId: this.channelId,
-          smallIcon: 'ic_launcher', // CRITICAL: Required for notification to display
+          smallIcon: 'ic_launcher',
+          largeIcon: 'ic_launcher',
           progress: {
             max: 100,
             current: progress,
             indeterminate: false,
           },
           ongoing: true,
-          onlyAlertOnce: true, // Only alert once, update quietly afterwards
+          onlyAlertOnce: true,
           pressAction: {
             id: `open:${id}`,
             launchActivity: 'default',
@@ -112,7 +113,8 @@ class NotificationService {
         body: `${body} • ${timeStr}`,
         android: {
           channelId: this.channelId,
-          smallIcon: 'ic_launcher', // CRITICAL: Required for notification to display
+          smallIcon: 'ic_launcher',
+          largeIcon: 'ic_launcher',
           ongoing: false,
           pressAction: {
             id: `open:${id}`,
@@ -156,7 +158,8 @@ class NotificationService {
         body,
         android: {
           channelId: this.channelId,
-          smallIcon: 'ic_launcher', // CRITICAL: Required for notification to display
+          smallIcon: 'ic_launcher',
+          largeIcon: 'ic_launcher',
           ongoing: false,
           pressAction: {
             id: `open:${id}`,
