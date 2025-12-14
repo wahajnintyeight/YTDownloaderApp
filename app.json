@@ -1,4 +1,7 @@
 {
   "name": "YTDownloaderApp",
-  "displayName": "ConvertYT Go"
+  "displayName": "ConvertYT Go",
+  "react-native-google-mobile-ads": {
+    "android_app_id": "ca-app-pub-8661261889949168~7172935438"
+  }
 }

@@ -26,8 +26,6 @@ export const SettingsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const { showDialog } = useDialog();
   const { width, height } = useWindowDimensions();
-  const isTablet = width >= 600;
-  const isLandscape = width > height;
   const {
     downloadPath,
     loadingPath,
@@ -50,7 +48,7 @@ export const SettingsScreen: React.FC = () => {
             type: 'success',
             title: 'Success',
             message: 'Download location updated successfully',
-            buttons: [{ text: 'OK', style: 'default', onPress: () => {} }],
+            buttons: [{ text: 'OK', style: 'default', onPress: () => { } }],
             dismissible: true,
           });
         }
@@ -59,7 +57,7 @@ export const SettingsScreen: React.FC = () => {
           type: 'info',
           title: 'Download Location',
           message: 'Files will be saved to the app Documents folder',
-          buttons: [{ text: 'OK', style: 'default', onPress: () => {} }],
+          buttons: [{ text: 'OK', style: 'default', onPress: () => { } }],
           dismissible: true,
         });
       }
@@ -69,7 +67,7 @@ export const SettingsScreen: React.FC = () => {
         type: 'error',
         title: 'Error',
         message: 'Failed to change download location',
-        buttons: [{ text: 'OK', style: 'default', onPress: () => {} }],
+        buttons: [{ text: 'OK', style: 'default', onPress: () => { } }],
         dismissible: true,
       });
     }
@@ -81,7 +79,7 @@ export const SettingsScreen: React.FC = () => {
       title: 'Reset to Default',
       message: 'Are you sure you want to reset the download location to default?',
       buttons: [
-        { text: 'Cancel', style: 'cancel', onPress: () => {} },
+        { text: 'Cancel', style: 'cancel', onPress: () => { } },
         {
           text: 'Reset',
           style: 'destructive',
@@ -92,7 +90,7 @@ export const SettingsScreen: React.FC = () => {
                 type: 'success',
                 title: 'Success',
                 message: 'Download location reset to default',
-                buttons: [{ text: 'OK', style: 'default', onPress: () => {} }],
+                buttons: [{ text: 'OK', style: 'default', onPress: () => { } }],
                 dismissible: true,
               });
             } catch (error) {
@@ -101,7 +99,7 @@ export const SettingsScreen: React.FC = () => {
                 type: 'error',
                 title: 'Error',
                 message: 'Failed to reset download location',
-                buttons: [{ text: 'OK', style: 'default', onPress: () => {} }],
+                buttons: [{ text: 'OK', style: 'default', onPress: () => { } }],
                 dismissible: true,
               });
             }
@@ -116,9 +114,9 @@ export const SettingsScreen: React.FC = () => {
     try {
       const dir = downloadPath || getDefaultDownloadPath();
       const isSaf = dir.startsWith('content://');
-      
+
       console.log(`📂 Opening configured download directory: ${dir}`);
-      
+
       if (!isSaf) {
         // File system path - use RNFS
         const exists = await RNFS.exists(dir);
@@ -139,7 +137,7 @@ export const SettingsScreen: React.FC = () => {
               title: 'Download Location',
               message: errorMessage,
               buttons: [
-                { text: 'OK', style: 'default', onPress: () => {} },
+                { text: 'OK', style: 'default', onPress: () => { } },
               ],
               dismissible: true,
             });
@@ -161,7 +159,7 @@ export const SettingsScreen: React.FC = () => {
             title: 'Permission Required',
             message: 'Please re-select the download folder to refresh permissions.',
             buttons: [
-              { text: 'Cancel', style: 'cancel', onPress: () => {} },
+              { text: 'Cancel', style: 'cancel', onPress: () => { } },
               { text: 'Select Folder', style: 'default', onPress: handleChangeDownloadPath },
             ],
             dismissible: true,
@@ -170,7 +168,7 @@ export const SettingsScreen: React.FC = () => {
         }
         // Try to open the directory using openDirectory helper
         const result = await openDirectory(dir) as DirectoryOpenResult | void;
-        
+
         // Check if we got a result object (means directory couldn't be opened automatically)
         if (result && typeof result === 'object' && 'success' in result) {
           if (!result.success) {
@@ -181,7 +179,7 @@ export const SettingsScreen: React.FC = () => {
                 title: 'Folder Location',
                 message: result.infoMessage,
                 buttons: [
-                  { text: 'OK', style: 'default', onPress: () => {} },
+                  { text: 'OK', style: 'default', onPress: () => { } },
                 ],
                 dismissible: true,
               });
@@ -191,7 +189,7 @@ export const SettingsScreen: React.FC = () => {
                 title: 'Error',
                 message: result.errorMessage,
                 buttons: [
-                  { text: 'Cancel', style: 'cancel', onPress: () => {} },
+                  { text: 'Cancel', style: 'cancel', onPress: () => { } },
                   { text: 'Change Location', style: 'default', onPress: handleChangeDownloadPath },
                 ],
                 dismissible: true,
@@ -213,7 +211,7 @@ export const SettingsScreen: React.FC = () => {
             title: 'Cannot Access Folder',
             message: 'Unable to access the selected folder. Please choose a different location.',
             buttons: [
-              { text: 'Cancel', style: 'cancel', onPress: () => {} },
+              { text: 'Cancel', style: 'cancel', onPress: () => { } },
               { text: 'Change Location', style: 'default', onPress: handleChangeDownloadPath },
             ],
             dismissible: true,
@@ -225,15 +223,15 @@ export const SettingsScreen: React.FC = () => {
       }
     } catch (error: any) {
       const errorMessage = error?.message || 'Failed to open download directory. Please check your download location settings.';
-      
+
       // Check if this is an informational message (not a real error)
       const isInfoMessage = error?.isInfoMessage || errorMessage.startsWith('📂');
-      
+
       // Only log as error if it's not an informational message
       if (!isInfoMessage) {
         console.error('Failed to open directory:', error);
       }
-      
+
       if (isInfoMessage) {
         // Show as informational dialog with just OK button
         showDialog({
@@ -241,7 +239,7 @@ export const SettingsScreen: React.FC = () => {
           title: 'Folder Location',
           message: errorMessage,
           buttons: [
-            { text: 'OK', style: 'default' as const, onPress: () => {} },
+            { text: 'OK', style: 'default' as const, onPress: () => { } },
           ],
           dismissible: true,
         });
@@ -252,7 +250,7 @@ export const SettingsScreen: React.FC = () => {
           title: 'Error',
           message: errorMessage,
           buttons: [
-            { text: 'Cancel', style: 'cancel' as const, onPress: () => {} },
+            { text: 'Cancel', style: 'cancel' as const, onPress: () => { } },
             { text: 'Change Location', style: 'default' as const, onPress: handleChangeDownloadPath },
           ],
           dismissible: true,
@@ -260,28 +258,6 @@ export const SettingsScreen: React.FC = () => {
       }
     }
   }, [downloadPath, getDefaultDownloadPath, showDialog, handleChangeDownloadPath]);
-
-  // DRY: Reusable test search handler - navigates to Browse tab with test search trigger
-  const handleTestSearch = useCallback(() => {
-    try {
-      // Navigate to MainTabs, then to Browse tab with testSearch param
-      navigation.navigate('MainTabs' as never, {
-        screen: 'Browse',
-        params: { testSearch: true },
-      } as never);
-      // Close settings screen
-      navigation.goBack();
-    } catch (error) {
-      console.error('Failed to navigate to test search:', error);
-      showDialog({
-        type: 'error',
-        title: 'Navigation Error',
-        message: 'Failed to open test search. Please try again.',
-        buttons: [{ text: 'OK', style: 'default', onPress: () => {} }],
-        dismissible: true,
-      });
-    }
-  }, [navigation, showDialog]);
 
   const displayPath = downloadPath || 'Not set';
   const defaultPath = getDefaultDownloadPath();
@@ -297,153 +273,101 @@ export const SettingsScreen: React.FC = () => {
       />
       <SafeAreaView style={styles.safeArea}>
 
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.backButton}
-            accessibilityLabel="Go back"
-          >
-            <ChevronLeftIcon
-              size={20}
-              color={theme.colors.text}
-              strokeWidth={2}
-            />
-          </TouchableOpacity>
-          <View style={styles.headerInfo}>
-            <Text style={styles.headerTitle}>Settings</Text>
-            <Text style={styles.headerSubtitle}>
-              Manage your download preferences
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <FolderIcon
-              size={20}
-              color={theme.colors.secondary}
-              strokeWidth={2}
-            />
-            <Text style={styles.sectionTitle}>Download Location</Text>
-          </View>
-
-          <View style={styles.pathContainer}>
-            <Text style={styles.pathLabel}>Current location</Text>
-            <View style={styles.pathBox}>
-              <Text style={styles.pathText} numberOfLines={3}>
-                {displayPath}
+        <View style={styles.header}>
+          <View style={styles.headerTop}>
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={styles.backButton}
+              accessibilityLabel="Go back"
+            >
+              <ChevronLeftIcon
+                size={20}
+                color={theme.colors.text}
+                strokeWidth={2}
+              />
+            </TouchableOpacity>
+            <View style={styles.headerInfo}>
+              <Text style={styles.headerTitle}>Settings</Text>
+              <Text style={styles.headerSubtitle}>
+                Manage your download preferences
               </Text>
             </View>
-            {isDefault && (
-              <Text style={styles.defaultBadge}>Default location</Text>
-            )}
           </View>
+        </View>
 
-          <View style={styles.buttonGroup}>
-            <TouchableOpacity
-              style={[styles.button, styles.primaryButton]}
-              onPress={handleChangeDownloadPath}
-              disabled={loadingPath}
-            >
-              {loadingPath ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <>
-                  <FolderIcon size={16} color="#fff" strokeWidth={2} />
-                  <Text style={styles.buttonText}>Change Location</Text>
-                </>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.button, styles.secondaryButton]}
-              onPress={handleOpenDirectory}
-              disabled={loadingPath}
-            >
-              <ExternalLinkIcon 
-                size={16} 
-                color={theme.colors.secondary} 
-                strokeWidth={2} 
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <FolderIcon
+                size={20}
+                color={theme.colors.secondary}
+                strokeWidth={2}
               />
-              <Text style={[styles.secondaryButtonText, { color: theme.colors.secondary }]}>
-                Open Directory
-              </Text>
-            </TouchableOpacity>
+              <Text style={styles.sectionTitle}>Download Location</Text>
+            </View>
 
-            {!isDefault && (
+            <View style={styles.pathContainer}>
+              <Text style={styles.pathLabel}>Current location</Text>
+              <View style={styles.pathBox}>
+                <Text style={styles.pathText} numberOfLines={3}>
+                  {displayPath}
+                </Text>
+              </View>
+              {isDefault && (
+                <Text style={styles.defaultBadge}>Default location</Text>
+              )}
+            </View>
+
+            <View style={styles.buttonGroup}>
               <TouchableOpacity
-                style={[styles.button, styles.tertiaryButton]}
-                onPress={handleResetToDefault}
+                style={[styles.button, styles.primaryButton]}
+                onPress={handleChangeDownloadPath}
                 disabled={loadingPath}
               >
                 {loadingPath ? (
-                  <ActivityIndicator color={theme.colors.textSecondary} size="small" />
+                  <ActivityIndicator color="#fff" size="small" />
                 ) : (
-                  <Text style={styles.tertiaryButtonText}>Reset to Default</Text>
+                  <>
+                    <FolderIcon size={16} color="#fff" strokeWidth={2} />
+                    <Text style={styles.buttonText}>Change Location</Text>
+                  </>
                 )}
               </TouchableOpacity>
-            )}
-          </View>
-        </View>
 
-        {/* <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <SearchIcon
-              size={20}
-              color={theme.colors.secondary}
-              strokeWidth={2}
-            />
-            <Text style={styles.sectionTitle}>Testing</Text>
-          </View>
-          <View style={styles.buttonGroup}>
-            <TouchableOpacity
-              style={[styles.button, styles.secondaryButton]}
-              onPress={handleTestSearch}
-            >
-              <SearchIcon size={16} color={theme.colors.secondary} strokeWidth={2} />
-              <Text style={[styles.secondaryButtonText, { color: theme.colors.secondary }]}>
-                Test Search
-              </Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.infoBox}>
-            <Text style={styles.infoText}>
-              • Use "Test Search" to load test videos for download testing
-            </Text>
-            <Text style={styles.infoText}>
-              • Perfect for testing multiple downloads, queuing, and load testing
-            </Text>
-          </View>
-        </View> */}
+              <TouchableOpacity
+                style={[styles.button, styles.secondaryButton]}
+                onPress={handleOpenDirectory}
+                disabled={loadingPath}
+              >
+                <ExternalLinkIcon
+                  size={16}
+                  color={theme.colors.secondary}
+                  strokeWidth={2}
+                />
+                <Text style={[styles.secondaryButtonText, { color: theme.colors.secondary }]}>
+                  Open Directory
+                </Text>
+              </TouchableOpacity>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Information</Text>
+              {!isDefault && (
+                <TouchableOpacity
+                  style={[styles.button, styles.tertiaryButton]}
+                  onPress={handleResetToDefault}
+                  disabled={loadingPath}
+                >
+                  {loadingPath ? (
+                    <ActivityIndicator color={theme.colors.textSecondary} size="small" />
+                  ) : (
+                    <Text style={styles.tertiaryButtonText}>Reset to Default</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
-          <View style={styles.infoBox}>
-            <Text style={styles.infoText}>
-              • Downloaded videos are automatically saved to your chosen location
-            </Text>
-            <Text style={styles.infoText}>
-              • The app remembers your preference across sessions
-            </Text>
-            <Text style={styles.infoText}>
-              • You can change this location anytime from here
-            </Text>
-            <Text style={styles.infoText}>
-              • Use "Open Directory" to browse your downloaded files
-            </Text>
-            {Platform.OS === 'android' && (
-              <Text style={styles.infoText}>
-                • On Android, you can select any folder accessible to the app
-              </Text>
-            )}
-          </View>
-        </View>
-      </ScrollView>
+
+
+
+        </ScrollView>
       </SafeAreaView>
     </View>
   );

@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { LogBox, AppState, AppStateStatus } from 'react-native';
+import mobileAds from 'react-native-google-mobile-ads';
 import { AppNavigator } from './navigation';
 import { downloadService } from './services';
 
@@ -18,6 +19,16 @@ const App: React.FC = () => {
 
   useEffect(() => {
     console.log('✅ App mounted successfully');
+
+    // Initialize Mobile Ads SDK
+    mobileAds()
+      .initialize()
+      .then(adapterStatuses => {
+        console.log('📢 AdMob initialized:', adapterStatuses);
+      })
+      .catch(error => {
+        console.error('❌ AdMob initialization failed:', error);
+      });
 
     // Handle app state changes
     const subscription = AppState.addEventListener(

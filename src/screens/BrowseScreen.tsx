@@ -22,6 +22,7 @@ import VideoResultCard from '../components/VideoResultCard';
 import LoadingAnimation from '../components/LoadingAnimation';
 import DownloadDrawer from '../components/DownloadDrawer';
 import AppHeader from '../components/AppHeader';
+import { AppBannerAd } from '../components/AppBannerAd';
 import { MainTabParamList } from '../navigation/types';
 
 type BrowseScreenRouteProp = RouteProp<MainTabParamList, 'Browse'>;
@@ -272,6 +273,9 @@ const BrowseScreen: React.FC = () => {
         video={selectedVideo}
         onClose={() => setModalVisible(false)}
       />
+
+      {/* Banner Ad at bottom */}
+      <AppBannerAd style={styles.bannerAd} />
     </View>
   );
 };
@@ -451,6 +455,13 @@ const getStyles = (theme: any, isDark: boolean) => StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     letterSpacing: 0.3,
+  },
+  bannerAd: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: theme.colors.background,
   },
 });
 
