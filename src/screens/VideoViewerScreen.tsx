@@ -16,7 +16,6 @@ import { useTheme } from '../hooks/useTheme';
 import { Video } from '../types/video';
 import DownloadDrawer from '../components/DownloadDrawer';
 import VideoResultCard from '../components/VideoResultCard';
-import { apiClient } from '../services/apiClient';
 import { useScreenTracking } from '../hooks/useScreenTracking';
 import { ScreenNames } from '../constants/ScreenNames';
 import { AppBannerAd } from '../components/AppBannerAd';
@@ -24,6 +23,7 @@ import { AppBannerAd } from '../components/AppBannerAd';
 interface VideoViewerParams {
   video: Video;
   youtubeUrl?: string;
+  relatedVideos?: Video[];
 }
 
 type VideoViewerRouteProp = RouteProp<Record<string, VideoViewerParams>, string>;
@@ -55,14 +55,20 @@ const VideoViewerScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const { video, youtubeUrl } = route.params;
+  const { video, youtubeUrl, relatedVideos: passedRelatedVideos } = route.params;
   const [downloadVisible, setDownloadVisible] = useState(false);
   const [isReady, setIsReady] = useState(false);
 
   useScreenTracking(ScreenNames.VideoViewer);
   
-  const [relatedVideos, setRelatedVideos] = useState<Video[]>([]);
-  const [loadingRelated, setLoadingRelated] = useState(false);
+  // Use passed related videos or empty array if none provided
+  const allRelatedVideos = useMemo(() => passedRelatedVideos || [], [passedRelatedVideos]);
+  
+  // Filter out the current video from display, but keep the full list for navigation
+  const displayedRelatedVideos = useMemo(
+    () => allRelatedVideos.filter(v => v.id !== video.id),
+    [allRelatedVideos, video.id]
+  );
   
   const isLandscape = SCREEN_WIDTH > SCREEN_HEIGHT;
   const PLAYER_HEIGHT = useMemo(() => {
@@ -246,39 +252,19 @@ const VideoViewerScreen: React.FC = () => {
   );
 
 
-  // Fetch related videos
-  useEffect(() => {
-    const fetchRelatedVideos = async () => {
-      if (!video.id) return;
-      setLoadingRelated(true);
-      try {
-        const searchQuery = video.channelName || video.title.split(' ').slice(0, 3).join(' ');
-        const response = await apiClient.searchVideos({
-          query: searchQuery,
-          nextPage: '',
-          prevPage: '',
-        });
-        const filtered = response.videos
-          .filter(v => v.id !== video.id)
-          .slice(0, 10);
-        setRelatedVideos(filtered);
-      } catch (error) {
-        console.error('Failed to fetch related videos:', error);
-        setRelatedVideos([]);
-      } finally {
-        setLoadingRelated(false);
-      }
-    };
-    fetchRelatedVideos();
-  }, [video.id, video.channelName, video.title]);
+
 
   useEffect(() => {
     setIsReady(false);
   }, [video.id]);
 
   const handleRelatedVideoPress = useCallback((relatedVideo: Video) => {
-    navigation.replace('VideoViewer', { video: relatedVideo });
-  }, [navigation]);
+    // Pass the full list of related videos (will filter out current video on display)
+    navigation.replace('VideoViewer', { 
+      video: relatedVideo,
+      relatedVideos: allRelatedVideos,
+    });
+  }, [navigation, allRelatedVideos]);
 
   // Landscape mode render
   if (isLandscape) {
@@ -418,13 +404,13 @@ const VideoViewerScreen: React.FC = () => {
         </View>
 
         {/* Related Videos */}
-        {relatedVideos.length > 0 && (
+        {displayedRelatedVideos.length > 0 && (
           <>
             <Text style={[styles.relatedTitle, { marginTop: theme.spacing.lg }]}>
-              Related Videos
+              More Videos
             </Text>
             <View style={styles.relatedList}>
-              {relatedVideos.map((item, index) => (
+              {displayedRelatedVideos.map((item, index) => (
                 <VideoResultCard
                   key={`${item.id}-${index}`}
                   video={item}
@@ -433,12 +419,6 @@ const VideoViewerScreen: React.FC = () => {
               ))}
             </View>
           </>
-        )}
-        
-        {loadingRelated && (
-          <View style={{ paddingVertical: 16, alignItems: 'center' }}>
-            <ActivityIndicator size="small" color={theme.colors.primary} />
-          </View>
         )}
       </ScrollView>
 

@@ -60,9 +60,12 @@ const BrowseScreen: React.FC = () => {
   }, [route.params, handleSearch]);
 
   const handleVideoPress = useCallback((video: Video) => {
-    // Navigate to VideoViewerScreen
-    navigation.navigate('VideoViewer', { video });
-  }, [navigation]);
+    // Navigate to VideoViewerScreen with search results as related videos
+    navigation.navigate('VideoViewer', { 
+      video,
+      relatedVideos: results.filter(v => v.id !== video.id),
+    });
+  }, [navigation, results]);
 
   const extractVideoIdFromInput = useCallback((input: string): string | null => {
     const trimmed = input.trim();
