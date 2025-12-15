@@ -271,13 +271,38 @@ export const openDirectory = async (directoryPath: string): Promise<DirectoryOpe
             throw new Error('No permission to access SAF directory');
           }
 
-          // NOTE: Opening SAF directories programmatically is problematic on Android
-          // Linking.openURL() shows browsers/messages instead of file managers
-          // We'll show an informative dialog with the folder path instead
+          // Extract readable path from SAF URI
+          // Format: content://com.android.externalstorage.documents/tree/primary:Music/test
+          // Extract: primary:Music/test -> /storage/emulated/0/Music/test
+          let readablePath = '';
+          let folderName = 'selected folder';
           
-          // Extract a readable folder name from the URI
-          const uriParts = directoryPath.split('/');
-          const folderName = uriParts[uriParts.length - 1] || 'selected folder';
+          try {
+            const treeMatch = directoryPath.match(/\/tree\/([^/]+(?:\/[^/]+)*)/);
+            if (treeMatch) {
+              const treePath = treeMatch[1];
+              // Decode URI encoding (e.g., primary%3AMusic -> primary:Music)
+              const decodedPath = decodeURIComponent(treePath);
+              // Convert primary:path to /storage/emulated/0/path
+              if (decodedPath.startsWith('primary:')) {
+                readablePath = `/storage/emulated/0/${decodedPath.replace('primary:', '')}`;
+                folderName = decodedPath.split('/').pop() || decodedPath.replace('primary:', '');
+              } else {
+                readablePath = decodedPath;
+                folderName = decodedPath.split('/').pop() || decodedPath;
+              }
+            } else {
+              // Fallback: extract last part of URI
+              const uriParts = directoryPath.split('/');
+              folderName = uriParts[uriParts.length - 1] || 'selected folder';
+              readablePath = folderName;
+            }
+          } catch (pathError) {
+            logger.warn('Failed to extract readable path from SAF URI:', pathError);
+            const uriParts = directoryPath.split('/');
+            folderName = uriParts[uriParts.length - 1] || 'selected folder';
+            readablePath = folderName;
+          }
           
           // Verify we have access to this directory and count files
           let fileCount = 0;
@@ -289,20 +314,20 @@ export const openDirectory = async (directoryPath: string): Promise<DirectoryOpe
             logger.warn('Failed to list SAF directory files:', listError);
           }
           
-          // Extract a more readable path (remove the long content:// prefix)
-          const readablePath = directoryPath.replace(/content:\/\/[^/]+\/[^/]+\//, '');
+          // Note: On Android 7+ (targetSdk 24+), we cannot use file:// URIs in intents
+          // There is no reliable way to programmatically open a SAF-selected folder
+          // in the user's file manager. We'll show an informative dialog instead.
           
-          // For SAF directories, we can't automatically open them in file managers
-          // Return result instead of throwing to avoid error logging
+          // If we can't open automatically, show informative dialog
           const infoMessage = 
-            `📂 Folder Location\n\n` +
+            `📂 Download Folder Location\n\n` +
             `Folder: ${folderName}\n` +
+            `Path: ${readablePath}\n` +
             (fileCount > 0 ? `Files: ${fileCount} items\n\n` : '\n') +
-            `Due to Android security restrictions, we cannot automatically open this folder in your file manager.\n\n` +
-            `Please navigate to this folder manually:\n` +
+            `To view your downloads:\n` +
             `1. Open your file manager app\n` +
-            `2. Navigate to: ${readablePath || folderName}\n\n` +
-            `Your downloads are saved to this location.`;
+            `2. Navigate to: ${readablePath}\n\n` +
+            `Your downloaded files are saved in this folder.`;
           
           // Return result instead of throwing - this prevents error logging
           logger.info(`Cannot auto-open SAF directory, returning info message for dialog`);

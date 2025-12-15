@@ -43,14 +43,32 @@ export const SettingsScreen: React.FC = () => {
         const { openDocumentTree } = await import('react-native-saf-x');
         const detail = await openDocumentTree(true);
         if (detail && typeof detail.uri === 'string') {
+          // Verify we have permission to the selected folder
+          const { hasPermission } = await import('react-native-saf-x');
+          const hasAccess = await hasPermission(detail.uri);
+          
+          if (!hasAccess) {
+            showDialog({
+              type: 'error',
+              title: 'Permission Required',
+              message: 'Please grant permission to access the selected folder. Try selecting the folder again.',
+              buttons: [{ text: 'OK', style: 'default', onPress: () => { } }],
+              dismissible: true,
+            });
+            return;
+          }
+
           await updateDownloadPath(detail.uri);
           showDialog({
             type: 'success',
             title: 'Success',
-            message: 'Download location updated successfully',
+            message: 'Download location updated successfully. Your downloads will be saved to the selected folder.',
             buttons: [{ text: 'OK', style: 'default', onPress: () => { } }],
             dismissible: true,
           });
+        } else {
+          // User cancelled folder selection
+          console.log('User cancelled folder selection');
         }
       } else {
         showDialog({
@@ -61,12 +79,15 @@ export const SettingsScreen: React.FC = () => {
           dismissible: true,
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to change download path', error);
+      const errorMessage = error?.message || 'Failed to change download location';
       showDialog({
         type: 'error',
         title: 'Error',
-        message: 'Failed to change download location',
+        message: errorMessage.includes('permission') || errorMessage.includes('Permission')
+          ? 'Permission denied. Please try selecting the folder again and grant access when prompted.'
+          : errorMessage,
         buttons: [{ text: 'OK', style: 'default', onPress: () => { } }],
         dismissible: true,
       });

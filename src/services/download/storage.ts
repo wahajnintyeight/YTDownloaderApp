@@ -8,6 +8,7 @@ import {
   exists,
   unlink,
   hasPermission,
+  mkdir,
 } from 'react-native-saf-x';
 
 export async function saveFromUrl(
@@ -70,21 +71,52 @@ export async function saveFromUrl(
     console.log(`✅ Download to temp complete. Moving to final...`);
 
     if (isSaf) {
-       // Check permissions
+       // Check permissions first
        if (!(await hasPermission(downloadsPath))) {
-         throw new Error('No permission for SAF directory');
+         throw new Error('No permission for SAF directory. Please re-select the folder in Settings.');
        }
 
        const docMime = mimeType || 'application/octet-stream';
-       const childUri = `${downloadsPath}/${encodeURIComponent(filename)}`;
-
-       // Clean existing
-       if (await exists(childUri)) {
-         await unlink(childUri);
+       
+       // Create a subfolder for organized downloads (optional, but recommended)
+       // react-native-saf-x allows mkdir on tree URIs
+       let targetDir = downloadsPath;
+       try {
+         const subfolderUri = `${downloadsPath}/YTDownloader`;
+         await mkdir(subfolderUri);
+         targetDir = subfolderUri;
+         console.log(`📁 Created/verified YTDownloader subfolder in SAF tree`);
+       } catch (mkdirError) {
+         // Subfolder might already exist, or mkdir might not be needed
+         console.log('Subfolder creation result:', mkdirError);
+         // Continue with root tree directory
        }
 
-       const doc = await createFile(childUri, { mimeType: docMime });
-       if (!doc?.uri) throw new Error('Failed to create SAF file');
+       // Let react-native-saf-x create the file in the tree directory
+       // Pass the directory URI + filename, and let the library handle the document URI conversion
+       const filePathInTree = `${targetDir}/${encodeURIComponent(filename)}`;
+       console.log(`📝 Creating SAF file in tree: ${targetDir} name: ${filename}`);
+
+       // Check if file exists and delete it first
+       try {
+         if (await exists(filePathInTree)) {
+           console.log('🗑️ Deleting existing file in SAF target');
+           await unlink(filePathInTree);
+         }
+       } catch (checkError) {
+         // File might not exist, which is fine
+         console.log('File existence check:', checkError);
+       }
+
+       // createFile expects a URI path - it will create the file and return a document URI
+       const doc = await createFile(filePathInTree, { mimeType: docMime });
+       const targetUri = doc?.uri;
+       
+       if (!targetUri) {
+         throw new Error('Failed to create SAF file. Please check folder permissions.');
+       }
+
+       console.log(`📤 Writing file to SAF location: ${targetUri}`);
 
        // Stream copy
        const stat = await RNFS.stat(tempPath);
@@ -95,7 +127,7 @@ export async function saveFromUrl(
        while (offset < fileSize) {
          const len = Math.min(chunkSize, fileSize - offset);
          const chunk = await RNFS.read(tempPath, len, offset, 'base64');
-         await safWriteFile(doc.uri, chunk, { encoding: 'base64', append: true });
+         await safWriteFile(targetUri, chunk, { encoding: 'base64', append: true });
          offset += len;
          
          const pct = 90 + Math.floor((offset / fileSize) * 10);
@@ -105,9 +137,9 @@ export async function saveFromUrl(
        // Cleanup temp
        await RNFS.unlink(tempPath);
        
-       console.log(`✅ Saved to SAF: ${doc.uri}`);
+       console.log(`✅ Saved to SAF: ${targetUri}`);
        onProgress?.(100);
-       return doc.uri;
+       return targetUri;
 
     } else {
       // Normal File System (Non-SAF)
@@ -131,9 +163,18 @@ export async function saveFromUrl(
       return finalPath;
     }
 
-  } catch (error) {
-    console.error('❌ Failed to save file from URL', error);
-    throw error;
+  } catch (error: any) {
+    const errorMessage = error?.message || 'Unknown error';
+    console.error('❌ Failed to save file from URL:', errorMessage, error);
+    
+    // Provide more helpful error messages
+    if (errorMessage.includes('permission') || errorMessage.includes('Permission')) {
+      throw new Error('No permission to access the selected folder. Please re-select the folder in Settings.');
+    } else if (errorMessage.includes('SAF') || errorMessage.includes('content://')) {
+      throw new Error('Failed to save to selected folder. Please try selecting a different folder or use the default Downloads location.');
+    } else {
+      throw new Error(`Failed to download file: ${errorMessage}`);
+    }
   }
 }
 
@@ -230,21 +271,71 @@ export async function saveFileToCacheAndExport(
       console.log(`✅ File saved: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
     }
 
-    // Step 2: Export to user-selected path in background
+    // Step 2: Export to user-selected path
     if (customDownloadPath) {
       console.log('📤 User selected location, attempting export...');
-      setTimeout(async () => {
-        try {
+      try {
+        // For SAF paths, we MUST export synchronously and return the exported path
+        // For filesystem paths, we can export in background but should still try
+        const isSaf = customDownloadPath.startsWith('content://');
+        
+        if (isSaf) {
+          // SAF paths: Export synchronously and return the SAF URI
+          // This ensures the file is actually saved to the user's selected location
           const exported = await exportToUserLocation(
             cachePath,
             filename,
             customDownloadPath,
           );
-          console.log(`✅ Also exported to: ${exported}`);
-        } catch (e) {
-          console.warn('⚠️ Export failed, keeping cache copy:', e);
+          console.log(`✅ Exported to SAF location: ${exported}`);
+          
+          // Clean up cache file after successful export
+          try {
+            if (blobFs) {
+              await blobFs.unlink(cachePath);
+            } else {
+              await RNFS.unlink(cachePath);
+            }
+            console.log('🗑️ Cleaned up cache file after SAF export');
+          } catch (cleanupError) {
+            console.warn('Failed to cleanup cache file:', cleanupError);
+          }
+          
+          base64Data = '';
+          return exported; // Return the SAF URI, not cache path
+        } else {
+          // Filesystem paths: Export synchronously to ensure it completes
+          const exported = await exportToUserLocation(
+            cachePath,
+            filename,
+            customDownloadPath,
+          );
+          console.log(`✅ Exported to: ${exported}`);
+          
+          // Keep cache copy as backup, but return the exported path
+          base64Data = '';
+          return exported;
         }
-      }, 0);
+      } catch (exportError: any) {
+        console.error('❌ Export to user location failed:', exportError);
+        const errorMessage = exportError?.message || 'Unknown error';
+        
+        // If export fails, we still have the cache copy
+        // But for SAF paths, this is a critical failure
+        if (customDownloadPath.startsWith('content://')) {
+          // For SAF, export failure means the file isn't where the user expects
+          // Throw error so user knows something went wrong
+          throw new Error(
+            `Failed to save to selected folder: ${errorMessage}. ` +
+            `Please check folder permissions in Settings or try selecting a different folder.`
+          );
+        } else {
+          // For filesystem paths, log warning but keep cache copy
+          console.warn('⚠️ Export failed, keeping cache copy:', exportError);
+          base64Data = '';
+          return cachePath;
+        }
+      }
     }
 
     base64Data = '';
@@ -293,6 +384,11 @@ export async function exportToUserLocation(
     }
 
     if (userPath.startsWith('content://')) {
+      // SAF URI - verify permissions first
+      if (!(await hasPermission(userPath))) {
+        throw new Error('No permission to access SAF directory. Please re-select the folder in settings.');
+      }
+
       const docMime = filename.endsWith('.mp3')
         ? 'audio/mpeg'
         : filename.endsWith('.mp4')
@@ -321,21 +417,50 @@ export async function exportToUserLocation(
         return destPath;
       }
 
-      const childUri = `${userPath}/${encodeURIComponent(filename)}`;
-
-      const fileExists = await exists(childUri);
-      if (fileExists) {
-        console.log('🗑️ Deleting existing file in SAF target');
-        await unlink(childUri);
+      // Create a subfolder for organized downloads (optional, but recommended)
+      let targetDir = userPath;
+      try {
+        const subfolderUri = `${userPath}/YTDownloader`;
+        await mkdir(subfolderUri);
+        targetDir = subfolderUri;
+        console.log(`📁 Created/verified YTDownloader subfolder in SAF tree`);
+      } catch (mkdirError) {
+        // Subfolder might already exist, or mkdir might not be needed
+        console.log('Subfolder creation result:', mkdirError);
+        // Continue with root tree directory
       }
 
-      const doc = await createFile(childUri, { mimeType: docMime });
-      const targetUri = doc?.uri;
-      if (!targetUri) throw new Error('Failed to create file in SAF folder');
+      // Let react-native-saf-x create the file in the tree directory
+      // Pass the directory URI + filename, and let the library handle the document URI conversion
+      const filePathInTree = `${targetDir}/${encodeURIComponent(filename)}`;
+      console.log(`📝 Creating SAF file in tree: ${targetDir} name: ${filename}`);
 
+      // Check if file exists and delete it first
+      try {
+        if (await exists(filePathInTree)) {
+          console.log('🗑️ Deleting existing file in SAF target');
+          await unlink(filePathInTree);
+        }
+      } catch (checkError) {
+        // File might not exist, which is fine
+        console.log('File existence check result:', checkError);
+      }
+
+      // createFile expects a URI path - it will create the file and return a document URI
+      const doc = await createFile(filePathInTree, { mimeType: docMime });
+      const targetUri = doc?.uri;
+      
+      if (!targetUri) {
+        throw new Error('Failed to create file in SAF folder. Please check folder permissions.');
+      }
+
+      console.log(`📤 Writing file to SAF location: ${targetUri}`);
+
+      // Read source file and write to SAF location
       const base64 = blobFs
         ? await blobFs.readFile(sourcePath, 'base64')
         : await RNFS.readFile(sourcePath, 'base64');
+      
       await safWriteFile(targetUri, base64, { encoding: 'base64' });
       console.log(`✅ Exported to SAF: ${targetUri}`);
       return targetUri;
@@ -358,8 +483,17 @@ export async function exportToUserLocation(
       console.log(`✅ Exported to: ${destPath}`);
       return destPath;
     }
-  } catch (error) {
-    console.warn('Export to user location failed', error);
-    throw error;
+  } catch (error: any) {
+    const errorMessage = error?.message || 'Unknown error';
+    console.error('❌ Export to user location failed:', errorMessage, error);
+    
+    // Provide more helpful error messages
+    if (errorMessage.includes('permission') || errorMessage.includes('Permission')) {
+      throw new Error('No permission to access the selected folder. Please re-select the folder in Settings.');
+    } else if (errorMessage.includes('SAF') || errorMessage.includes('content://')) {
+      throw new Error('Failed to save to selected folder. Please try selecting a different folder or use the default Downloads location.');
+    } else {
+      throw new Error(`Failed to save file: ${errorMessage}`);
+    }
   }
 }

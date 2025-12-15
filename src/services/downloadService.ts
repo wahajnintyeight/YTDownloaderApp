@@ -348,15 +348,19 @@ class DownloadService {
 
       // Determine download directory and filename
       // NOTE: react-native-blob-util cannot write directly to SAF content:// URIs,
-      // so if the user-selected path is a SAF URI we fall back to a real
-      // filesystem directory for the actual write.
-      const baseDir =
-        this.customDownloadPath &&
-          !this.customDownloadPath.startsWith('content://')
-          ? this.customDownloadPath
-          : Platform.OS === 'android'
-            ? `${RNFS.DownloadDirectoryPath}/YTDownloader`
-            : `${RNFS.DocumentDirectoryPath}/YTDownloader`;
+      // so we always download to a temp location first, then export to SAF.
+      const isSafPath = this.customDownloadPath?.startsWith('content://');
+      const targetSafPath = isSafPath ? this.customDownloadPath : null;
+      
+      // For SAF paths, we download to a temp location first
+      // For filesystem paths, we can download directly
+      const tempDir = `${RNFS.CachesDirectoryPath}/YTDownloader_Downloads`;
+      const baseDir = isSafPath
+        ? tempDir
+        : (this.customDownloadPath || 
+            (Platform.OS === 'android'
+              ? `${RNFS.DownloadDirectoryPath}/YTDownloader`
+              : `${RNFS.DocumentDirectoryPath}/YTDownloader`));
 
       const sanitizedTitle = this.sanitizeFileName(
         options.videoTitle || options.videoId,
@@ -366,6 +370,9 @@ class DownloadService {
 
       console.log('📂 Download base dir:', baseDir);
       console.log('📂 Download path:', filePath);
+      if (targetSafPath) {
+        console.log('📂 Target SAF path:', targetSafPath);
+      }
       console.log('📥 Starting native download manager...');
 
       // Ensure download directory exists (only for real filesystem paths)
@@ -417,10 +424,45 @@ class DownloadService {
 
       // Wait for download to complete
       const res = await task;
-      const savedPath = res.path();
+      let savedPath = res.path();
 
       console.log('✅ Download completed successfully!');
-      console.log('📂 Saved to:', savedPath);
+      console.log('📂 Initial save to:', savedPath);
+
+      // If we need to export to SAF location, do it now
+      if (targetSafPath) {
+        console.log('📤 Exporting to SAF location:', targetSafPath);
+        try {
+          const { exportToUserLocation } = await import('./download/storage');
+          const exportedPath = await exportToUserLocation(savedPath, filename, targetSafPath);
+          console.log('✅ Exported to SAF:', exportedPath);
+          
+          // Clean up temp file
+          try {
+            await RNFS.unlink(savedPath);
+            console.log('🗑️ Cleaned up temp file');
+          } catch (cleanupErr) {
+            console.warn('Failed to cleanup temp file:', cleanupErr);
+          }
+          
+          savedPath = exportedPath;
+        } catch (exportError: any) {
+          console.error('❌ SAF export failed:', exportError);
+          // Keep the temp file as fallback
+          console.warn('⚠️ Keeping download in temp location:', savedPath);
+          // Copy to default downloads as fallback
+          try {
+            const fallbackDir = `${RNFS.DownloadDirectoryPath}/YTDownloader`;
+            await RNFS.mkdir(fallbackDir);
+            const fallbackPath = `${fallbackDir}/${filename}`;
+            await RNFS.copyFile(savedPath, fallbackPath);
+            console.log('✅ Fallback copy to:', fallbackPath);
+            savedPath = fallbackPath;
+          } catch (fallbackErr) {
+            console.error('Fallback copy also failed:', fallbackErr);
+          }
+        }
+      }
 
       // Save to storage service
       const video: DownloadedVideo = {
