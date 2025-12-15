@@ -25,7 +25,7 @@ const production: EnvConfig = {
   API_BASE_URL: 'https://api.theprojectphoenix.top',
   SSE_BASE_URL: 'https://sse.theprojectphoenix.top',
   ENVIRONMENT: 'production',
-  ADS_ENABLED: true,
+  ADS_ENABLED: false,
 };
 
 // Staging configuration (optional)

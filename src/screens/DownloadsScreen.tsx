@@ -25,6 +25,7 @@ import { useEffect, useState } from 'react';
 import { getDownloadsScreenStyles } from './DownloadsScreen.styles';
 import { openDirectory } from '../utils/openFile';
 import RNFS from 'react-native-fs';
+import { AppBannerAd } from '../components/AppBannerAd';
 
 // Removed DownloadItem component - now using SwipeableDownloadItem
 
@@ -498,6 +499,9 @@ const DownloadsScreen: React.FC = () => {
           theme={theme}
           position={menuPosition}
         />
+
+        {/* Banner Ad */}
+        <AppBannerAd />
       </SafeAreaView>
     </GestureHandlerRootView>
   );

@@ -5,7 +5,7 @@ import { MainTabParamList } from './types';
 import { useTheme } from '../hooks/useTheme';
 import { useDownloads } from '../hooks/useDownloads';
 import { SearchIcon, DownloadIcon } from '../components/icons/ModernIcons';
-import BrowseScreen from '../screens/BrowseScreen';
+import { BrowseStackNavigator } from './BrowseStackNavigator';
 import DownloadsScreen from '../screens/DownloadsScreen';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -85,7 +85,7 @@ export const MainTabNavigator: React.FC = () => {
     >
       <Tab.Screen
         name="Browse"
-        component={BrowseScreen}
+        component={BrowseStackNavigator}
         options={{ tabBarLabel: 'Browse' }}
       />
       <Tab.Screen

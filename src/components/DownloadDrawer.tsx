@@ -17,6 +17,7 @@ import {
   Easing,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Video, VideoFormat, VideoQuality } from '../types/video';
 import { useTheme } from '../hooks/useTheme';
 import { useDownloads } from '../hooks/useDownloads';
@@ -49,10 +50,13 @@ const SECONDARY_QUALITIES: VideoQuality[] = [
 ];
 const BITRATE_OPTIONS = ['128k', '192k', '256k', '320k'];
 
-// <CHANGE> Drawer takes half the screen space
-const getDrawerHeight = (screenHeight: number): number => {
-  // Always use 50% of screen height
-  return screenHeight * 0.5;
+// Drawer height constants
+const getInitialDrawerHeight = (screenHeight: number): number => {
+  return screenHeight * 0.5; // Start at 50%
+};
+
+const getMaxDrawerHeight = (screenHeight: number, topInset: number): number => {
+  return screenHeight - topInset; // Can expand to full screen minus safe area
 };
 
 const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
@@ -67,6 +71,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
   const { downloadLocation, setDownloadLocation, isLocationSet } =
     useSettings();
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
 
   // ALL useState hooks must come before useMemo/useCallback
   const [selectedFormat, setSelectedFormat] = useState<VideoFormat>('mp4');
@@ -82,8 +87,16 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
   const isSmallScreen = width < 380;
   const isTablet = width >= 600; // Tablets are typically 600px+ width
   
-  // Recalculate drawer height on rotation - useMemo AFTER useState
-  const DRAWER_HEIGHT = useMemo(() => getDrawerHeight(height), [height]);
+  // Drawer height calculations
+  const INITIAL_DRAWER_HEIGHT = useMemo(() => getInitialDrawerHeight(height), [height]);
+  const MAX_DRAWER_HEIGHT = useMemo(() => getMaxDrawerHeight(height, insets.top), [height, insets.top]);
+  
+  // The offset from bottom when at initial (collapsed) position
+  // When expanded, offset is 0. When collapsed, offset is the difference.
+  const COLLAPSED_OFFSET = MAX_DRAWER_HEIGHT - INITIAL_DRAWER_HEIGHT;
+  
+  // Track if drawer is expanded
+  const [isExpanded, setIsExpanded] = useState(false);
   
   // Responsive thumbnail dimensions based on screen size and orientation
   const thumbnailAspectRatio = 16 / 9;
@@ -93,10 +106,15 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
   const thumbnailWidth = Math.min(thumbnailMaxWidth, isSmallScreen ? 140 : isTablet ? 250 : 200);
   const thumbnailHeight = thumbnailWidth / thumbnailAspectRatio;
 
-  const translateY = useRef(new Animated.Value(DRAWER_HEIGHT)).current;
+  // translateY controls the drawer position from bottom
+  // 0 = fully visible at current height, positive = sliding down/closing
+  const translateY = useRef(new Animated.Value(MAX_DRAWER_HEIGHT)).current;
+  // expansionY controls how much the drawer is expanded (0 = collapsed position, -COLLAPSED_OFFSET = expanded)
+  const expansionY = useRef(new Animated.Value(0)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const dragHandleScale = useRef(new Animated.Value(1)).current;
   const lastGestureY = useRef(0);
+  const isExpandedRef = useRef(false);
 
   const animationsRef = useRef<any[]>([]);
   const lastVideoQualityRef = useRef<VideoQuality>('720p');
@@ -110,11 +128,19 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
 
   useEffect(() => {
     if (visible) {
+      // Reset to collapsed state when opening
+      isExpandedRef.current = false;
+      setIsExpanded(false);
+      expansionY.setValue(0);
+      translateY.setValue(MAX_DRAWER_HEIGHT);
+      
+      // Animate drawer sliding up
       animationsRef.current = [
-        Animated.timing(translateY, {
+        Animated.spring(translateY, {
           toValue: 0,
-          duration: 320,
-          easing: Easing.out(Easing.cubic),
+          damping: 20,
+          mass: 1,
+          stiffness: 200,
           useNativeDriver: true,
         }),
         Animated.timing(backdropOpacity, {
@@ -148,7 +174,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
         animation && 'stop' in animation && animation.stop?.();
       });
     };
-  }, [visible, translateY, backdropOpacity, dragHandleScale]);
+  }, [visible, translateY, expansionY, backdropOpacity, dragHandleScale, MAX_DRAWER_HEIGHT]);
 
   useEffect(() => {
     if (selectedFormat === 'mp3') {
@@ -167,14 +193,13 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
   const panResponder = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => true, // Always capture on start
+        onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: (_, gestureState) => {
-          // Capture if dragging down and vertical movement is dominant
-          return gestureState.dy > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+          return Math.abs(gestureState.dy) > 5 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
         },
-        onPanResponderTerminationRequest: () => false, // Don't allow termination
+        onPanResponderTerminationRequest: () => false,
         onPanResponderGrant: () => {
-          lastGestureY.current = (translateY as any)._value;
+          lastGestureY.current = (translateY as any)._value + (expansionY as any)._value;
 
           Animated.timing(dragHandleScale, {
             toValue: 1.15,
@@ -183,63 +208,124 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
           }).start();
         },
         onPanResponderMove: (_, gestureState) => {
-          // Allow both up and down, but prefer downward for closing
-          const newY = Math.max(
-            0,
-            Math.min(DRAWER_HEIGHT, lastGestureY.current + gestureState.dy),
-          );
-
-          translateY.setValue(newY);
-          backdropOpacity.setValue((1 - newY / DRAWER_HEIGHT) * 0.4);
+          const dy = gestureState.dy;
+          
+          if (dy < 0 && !isExpandedRef.current) {
+            // Dragging UP when collapsed - expand smoothly
+            const expansion = Math.min(Math.abs(dy), COLLAPSED_OFFSET);
+            expansionY.setValue(-expansion);
+            const progress = expansion / COLLAPSED_OFFSET;
+            backdropOpacity.setValue(0.4 + progress * 0.2);
+          } else if (dy > 0) {
+            // Dragging DOWN - close drawer
+            if (isExpandedRef.current) {
+              // If expanded, first collapse then close
+              const collapseAmount = Math.min(dy, COLLAPSED_OFFSET);
+              expansionY.setValue(-COLLAPSED_OFFSET + collapseAmount);
+              if (dy > COLLAPSED_OFFSET) {
+                translateY.setValue(dy - COLLAPSED_OFFSET);
+              }
+            } else {
+              translateY.setValue(Math.max(0, dy));
+            }
+            const currentHeight = isExpandedRef.current ? MAX_DRAWER_HEIGHT : INITIAL_DRAWER_HEIGHT;
+            backdropOpacity.setValue(Math.max(0, (1 - dy / currentHeight) * 0.4));
+          }
         },
         onPanResponderRelease: (_, gestureState) => {
-          const currentY = lastGestureY.current + gestureState.dy;
-          const shouldClose =
-            gestureState.dy > DRAWER_HEIGHT / 3 ||
-            gestureState.vy > 0.8 ||
-            currentY > DRAWER_HEIGHT * 0.4;
+          const dy = gestureState.dy;
+          const vy = gestureState.vy;
+          
+          Animated.timing(dragHandleScale, {
+            toValue: 1,
+            duration: 160,
+            useNativeDriver: true,
+          }).start();
 
-          if (shouldClose) {
+          if (dy < -50 || vy < -0.5) {
+            // Expand to full height - smooth spring animation
+            isExpandedRef.current = true;
+            setIsExpanded(true);
             Animated.parallel([
-              Animated.spring(translateY, {
-                toValue: DRAWER_HEIGHT,
+              Animated.spring(expansionY, {
+                toValue: -COLLAPSED_OFFSET,
                 damping: 20,
                 mass: 0.8,
-                stiffness: 150,
-                overshootClamping: true,
+                stiffness: 200,
                 useNativeDriver: true,
               }),
               Animated.timing(backdropOpacity, {
-                toValue: 0,
-                duration: 250,
-                easing: Easing.out(Easing.ease),
+                toValue: 0.6,
+                duration: 200,
                 useNativeDriver: true,
               }),
-            ]).start(() => onClose());
+            ]).start();
+          } else if (dy > 0) {
+            const currentHeight = isExpandedRef.current ? MAX_DRAWER_HEIGHT : INITIAL_DRAWER_HEIGHT;
+            const shouldClose = dy > currentHeight / 3 || vy > 0.8;
+
+            if (shouldClose) {
+              // Close drawer
+              Animated.parallel([
+                Animated.spring(translateY, {
+                  toValue: MAX_DRAWER_HEIGHT,
+                  damping: 20,
+                  mass: 0.8,
+                  stiffness: 150,
+                  overshootClamping: true,
+                  useNativeDriver: true,
+                }),
+                Animated.timing(backdropOpacity, {
+                  toValue: 0,
+                  duration: 250,
+                  easing: Easing.out(Easing.ease),
+                  useNativeDriver: true,
+                }),
+              ]).start(() => onClose());
+            } else {
+              // Snap back
+              Animated.parallel([
+                Animated.spring(translateY, {
+                  toValue: 0,
+                  damping: 20,
+                  mass: 0.8,
+                  stiffness: 200,
+                  useNativeDriver: true,
+                }),
+                Animated.spring(expansionY, {
+                  toValue: isExpandedRef.current ? -COLLAPSED_OFFSET : 0,
+                  damping: 20,
+                  mass: 0.8,
+                  stiffness: 200,
+                  useNativeDriver: true,
+                }),
+                Animated.timing(backdropOpacity, {
+                  toValue: isExpandedRef.current ? 0.6 : 0.4,
+                  duration: 200,
+                  useNativeDriver: true,
+                }),
+              ]).start();
+            }
           } else {
+            // No significant movement - snap back to current state
             Animated.parallel([
-              Animated.timing(translateY, {
-                toValue: 0,
-                duration: 240,
-                easing: Easing.out(Easing.cubic),
+              Animated.spring(expansionY, {
+                toValue: isExpandedRef.current ? -COLLAPSED_OFFSET : 0,
+                damping: 20,
+                mass: 0.8,
+                stiffness: 200,
                 useNativeDriver: true,
               }),
               Animated.timing(backdropOpacity, {
-                toValue: 0.4,
-                duration: 220,
-                easing: Easing.out(Easing.cubic),
-                useNativeDriver: true,
-              }),
-              Animated.timing(dragHandleScale, {
-                toValue: 1,
-                duration: 160,
+                toValue: isExpandedRef.current ? 0.6 : 0.4,
+                duration: 200,
                 useNativeDriver: true,
               }),
             ]).start();
           }
         },
       }),
-    [translateY, backdropOpacity, dragHandleScale, onClose, DRAWER_HEIGHT],
+    [translateY, expansionY, backdropOpacity, dragHandleScale, onClose, COLLAPSED_OFFSET, INITIAL_DRAWER_HEIGHT, MAX_DRAWER_HEIGHT],
   );
 
   const handleDownload = useCallback(async (skipLocationCheck = false) => {
@@ -298,7 +384,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
   const handleClose = useCallback(() => {
     Animated.parallel([
       Animated.spring(translateY, {
-        toValue: DRAWER_HEIGHT,
+        toValue: MAX_DRAWER_HEIGHT,
         damping: 20,
         mass: 0.8,
         stiffness: 150,
@@ -312,7 +398,7 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
         useNativeDriver: true,
       }),
     ]).start(() => onClose());
-  }, [onClose, translateY, backdropOpacity, DRAWER_HEIGHT]);
+  }, [onClose, translateY, backdropOpacity, MAX_DRAWER_HEIGHT]);
 
   const handleLocationSelect = useCallback(
     async (path: string) => {
@@ -531,10 +617,11 @@ const DownloadDrawer: React.FC<DownloadDrawerProps> = ({
             style={[
               drawerStyles.drawerContainer,
               { 
-                transform: [{ translateY }],
-                height: DRAWER_HEIGHT,
-                maxHeight: DRAWER_HEIGHT,
-                overflow: 'hidden', // Keep content within drawer bounds
+                transform: [
+                  { translateY: Animated.add(translateY, expansionY) },
+                ],
+                height: MAX_DRAWER_HEIGHT,
+                overflow: 'hidden',
               },
             ]}
           >

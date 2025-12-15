@@ -5,3 +5,4 @@
 
 export { AppNavigator } from './AppNavigator';
 export { MainTabNavigator } from './MainTabNavigator';
+export { BrowseStackNavigator } from './BrowseStackNavigator';

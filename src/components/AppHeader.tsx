@@ -47,7 +47,7 @@ const AppHeader: React.FC<AppHeaderProps> = ({
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: theme.spacing.lg,
-      paddingVertical: theme.spacing.lg,
+      paddingVertical: 12,//theme.spacing.lg,
       minHeight: 72,
     },
     leftSection: {
@@ -91,7 +91,7 @@ const AppHeader: React.FC<AppHeaderProps> = ({
       height: 4,
       backgroundColor: theme.colors.primary,
       borderRadius: 2,
-      marginTop: 6,
+      marginTop: 5,
     },
   });
 
