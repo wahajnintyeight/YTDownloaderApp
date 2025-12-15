@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useWindowDimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute, RouteProp, useNavigation } from '@react-navigation/native';
 import { YoutubeView, useYouTubePlayer, useYouTubeEvent } from 'react-native-youtube-bridge';
 import { Download } from 'lucide-react-native';
@@ -87,6 +87,7 @@ const VideoViewerScreen: React.FC = () => {
   const route = useRoute<VideoViewerRouteProp>();
   const navigation = useNavigation<any>();
   const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const { video, youtubeUrl } = route.params;
   const [downloadVisible, setDownloadVisible] = useState(false);
   const [isReady, setIsReady] = useState(false);
@@ -100,17 +101,21 @@ const VideoViewerScreen: React.FC = () => {
   
   // Detect landscape mode
   const isLandscape = SCREEN_WIDTH > SCREEN_HEIGHT;
+
+  const HEADER_HEIGHT = useMemo(() => {
+    return isLandscape ? 40 : 56;
+  }, [isLandscape]);
   
   // Responsive player height that updates on rotation
   // Header is absolute and can slide away, so we can use more space
   const PLAYER_HEIGHT = useMemo(() => {
     if (isLandscape) {
-      // Landscape: maximize player (header slides away, so use full height)
-      return SCREEN_HEIGHT;
+      // Landscape: fit player within the visible area (avoid going behind header / safe area)
+      return Math.max(0, SCREEN_HEIGHT - HEADER_HEIGHT - insets.top);
     }
     // Portrait: maintain 16:9 ratio
     return SCREEN_WIDTH * (9 / 16);
-  }, [SCREEN_WIDTH, SCREEN_HEIGHT, isLandscape]);
+  }, [SCREEN_WIDTH, SCREEN_HEIGHT, isLandscape, HEADER_HEIGHT, insets.top]);
 
   // Extract video ID or URL for YouTube player
   const videoIdOrUrl = useMemo(() => {
@@ -480,27 +485,6 @@ const VideoViewerScreen: React.FC = () => {
                 <Text style={styles.metaText}>
                   {formatDate(video.publishedAt)}
                 </Text>
-              </View>
-
-              <View style={styles.divider} />
-
-              {/* Channel Info */}
-              <View style={styles.channelRow}>
-                <View style={styles.channelAvatar}>
-                  <Text style={styles.channelInitial}>
-                    {video.channelName?.charAt(0).toUpperCase() || 'Y'}
-                  </Text>
-                </View>
-                <View style={styles.channelInfo}>
-                  <Text style={styles.channelName} numberOfLines={1}>
-                    {video.channelName}
-                  </Text>
-                  {video.duration && (
-                    <Text style={styles.channelMeta}>
-                      Duration: {formatDuration(video.duration)}
-                    </Text>
-                  )}
-                </View>
               </View>
 
               <View style={styles.divider} />

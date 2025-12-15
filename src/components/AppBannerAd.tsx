@@ -3,8 +3,8 @@ import { View, StyleSheet } from 'react-native';
 import {
   BannerAd,
   BannerAdSize,
-  TestIds,
 } from 'react-native-google-mobile-ads';
+import { isAdsEnabled } from '../config/adsConfig';
 
 /**
  * AdMob Banner Ad Component
@@ -22,6 +22,8 @@ interface AppBannerAdProps {
 }
 
 export const AppBannerAd: React.FC<AppBannerAdProps> = ({ style }) => {
+  if (!isAdsEnabled()) return null;
+
   return (
     <View style={[styles.container, style]}>
       <BannerAd

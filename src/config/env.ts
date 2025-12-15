@@ -9,6 +9,7 @@ interface EnvConfig {
   API_BASE_URL: string;
   SSE_BASE_URL: string;
   ENVIRONMENT: 'development' | 'staging' | 'production';
+  ADS_ENABLED: boolean;
 }
 
 // Development configuration (local/testing)
@@ -16,6 +17,7 @@ const development: EnvConfig = {
   API_BASE_URL: 'http://192.168.100.10:8881',
   SSE_BASE_URL: 'http://192.168.100.10:8885',
   ENVIRONMENT: 'development',
+  ADS_ENABLED: false,
 };
 
 // Production configuration
@@ -23,6 +25,7 @@ const production: EnvConfig = {
   API_BASE_URL: 'https://api.theprojectphoenix.top',
   SSE_BASE_URL: 'https://sse.theprojectphoenix.top',
   ENVIRONMENT: 'production',
+  ADS_ENABLED: true,
 };
 
 // Staging configuration (optional)
@@ -30,6 +33,7 @@ const staging: EnvConfig = {
   API_BASE_URL: 'https://staging-api.theprojectphoenix.top',
   SSE_BASE_URL: 'https://staging-sse.theprojectphoenix.top',
   ENVIRONMENT: 'staging',
+  ADS_ENABLED: true,
 };
 
 /**
@@ -57,6 +61,7 @@ export const ENV = envConfigs[ACTIVE_ENV];
 export const API_BASE_URL = ENV.API_BASE_URL;
 export const SSE_BASE_URL = ENV.SSE_BASE_URL;
 export const ENVIRONMENT = ENV.ENVIRONMENT;
+export const ADS_ENABLED = ENV.ADS_ENABLED;
 
 // Log current environment on app start (only in development)
 if (__DEV__) {
@@ -66,6 +71,7 @@ if (__DEV__) {
   console.log(`📍 Environment: ${ENVIRONMENT}`);
   console.log(`🌐 API Base URL: ${API_BASE_URL}`);
   console.log(`📡 SSE Base URL: ${SSE_BASE_URL}`);
+  console.log(`📢 Ads Enabled: ${ADS_ENABLED}`);
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 }
 
