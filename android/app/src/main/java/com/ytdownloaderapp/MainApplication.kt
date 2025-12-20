@@ -1,6 +1,5 @@
 package com.ytdownloaderapp
 
-import com.bugsnag.android.Bugsnag
 import android.app.Application
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
@@ -23,7 +22,6 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
-    Bugsnag.start(this)
     loadReactNative(this)
   }
 }

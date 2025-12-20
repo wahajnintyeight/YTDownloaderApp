@@ -3,6 +3,8 @@
  * Ensures logs are visible in both Metro bundler and native logs
  */
 
+import { DOWNLOAD_FOLDER_NAME } from '../config/env';
+
 type LogLevel = 'log' | 'info' | 'warn' | 'error' | 'debug';
 
 class Logger {
@@ -61,7 +63,7 @@ class Logger {
 }
 
 // Export default logger instance
-export const logger = new Logger('YTDownloader');
+export const logger = new Logger(DOWNLOAD_FOLDER_NAME);
 
 // Export Logger class for creating custom instances
 export default Logger;

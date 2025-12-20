@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { storageService, DownloadedVideo } from '../services/storageService';
 import { downloadService } from '../services/downloadService';
 import RNFS from 'react-native-fs';
+import { DOWNLOAD_FOLDER_NAME } from '../config/env';
 
 export interface UseDownloadManagerReturn {
   // Download list state
@@ -34,7 +35,7 @@ export const useDownloadManager = (): UseDownloadManagerReturn => {
   const [loadingPath, setLoadingPath] = useState(false);
 
   const getDefaultDownloadPath = useCallback(() => {
-    return `${RNFS.DownloadDirectoryPath}/YTDownloader`;
+    return `${RNFS.DownloadDirectoryPath}/${DOWNLOAD_FOLDER_NAME}`;
   }, []);
 
   // Load download list from storage
@@ -55,7 +56,7 @@ export const useDownloadManager = (): UseDownloadManagerReturn => {
     setLoadingPath(true);
     try {
       const path = await storageService.getDownloadPath();
-      const defaultPath = `${RNFS.DownloadDirectoryPath}/YTDownloader`;
+      const defaultPath = `${RNFS.DownloadDirectoryPath}/${DOWNLOAD_FOLDER_NAME}`;
       const resolvedPath = path || defaultPath;
       console.log(`✅ Loaded download path from storage: ${resolvedPath}`);
       setDownloadPath(resolvedPath);
@@ -63,7 +64,7 @@ export const useDownloadManager = (): UseDownloadManagerReturn => {
       return resolvedPath;
     } catch (error) {
       console.error('❌ Failed to load download path', error);
-      const defaultPath = `${RNFS.DownloadDirectoryPath}/YTDownloader`;
+      const defaultPath = `${RNFS.DownloadDirectoryPath}/${DOWNLOAD_FOLDER_NAME}`;
       setDownloadPath(defaultPath);
       return defaultPath;
     } finally {

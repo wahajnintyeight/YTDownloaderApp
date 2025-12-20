@@ -1,6 +1,7 @@
 import { Platform, Linking } from 'react-native';
 import RNFS from 'react-native-fs';
 import { logger } from './logger';
+import { DOWNLOAD_FOLDER_NAME } from '../config/env';
 
 let FileViewer: any;
 try {
@@ -71,7 +72,7 @@ const getMimeTypeFromPath = (filePath: string): string => {
 
 /**
  * Constructs the expected public download path for a file.
- * Based on the app's export pattern: /storage/emulated/0/Download/YTDownloader/{filename}
+ * Based on the app's export pattern: /storage/emulated/0/Download/{DOWNLOAD_FOLDER_NAME}/{filename}
  */
 /**
  * Normalize a path for internal checks: remove file:// prefix and convert
@@ -91,7 +92,7 @@ const normalizePathForChecks = (p: string): string => {
 const getPublicDownloadPath = (cachePath: string): string => {
   const normalized = normalizePathForChecks(cachePath || '');
   const filename = normalized.split('/').pop() || '';
-  return `${RNFS.DownloadDirectoryPath}/YTDownloader/${filename}`;
+  return `${RNFS.DownloadDirectoryPath}/${DOWNLOAD_FOLDER_NAME}/${filename}`;
 };
 
 /**
@@ -449,7 +450,7 @@ export const openDirectory = async (directoryPath: string): Promise<DirectoryOpe
         throw new Error(
           `Files are saved to:\n${normalized}\n\n` +
           `Due to Android security restrictions (scoped storage), please navigate to this folder manually in your file manager app. ` +
-          `Look for the "Downloads" folder, then open "YTDownloader" subfolder.`
+          `Look for the "Downloads" folder, then open "${DOWNLOAD_FOLDER_NAME}" subfolder.`
         );
       } else {
         // For non-Android platforms, use file:// URI

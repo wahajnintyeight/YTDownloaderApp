@@ -15,7 +15,28 @@ import { AppNavigator } from './src/navigation/AppNavigator';
 import { logger } from './src/utils/logger';
 import { downloadService, analyticsService } from './src/services';
 import { backgroundTaskManager } from './src/utils/backgroundTask';
-import Bugsnag from "@bugsnag/react-native";
+import * as Sentry from '@sentry/react-native';
+import envConfigs from './src/config/env';
+
+Sentry.init({
+  dsn: 'https://afe0e2c8517edc4e11e2de81bf48ab3a@o4507803860205568.ingest.de.sentry.io/4510568042201168',
+
+  // Adds more context data to events (IP address, cookies, user, etc.)
+  // For more information, visit: https://docs.sentry.io/platforms/react-native/data-management/data-collected/
+  sendDefaultPii: true,
+
+  // Enable Logs
+  enableLogs: true,
+  tracesSampleRate: 1.0,
+  environment: envConfigs.ENVIRONMENT,
+  // Configure Session Replay
+  replaysSessionSampleRate: 0.1,
+  replaysOnErrorSampleRate: 1,
+  integrations: [Sentry.mobileReplayIntegration(), Sentry.feedbackIntegration()],
+
+  // uncomment the line below to enable Spotlight (https://spotlightjs.com)
+  // spotlight: __DEV__,
+});
 
 // Enable console logs in development
 if (__DEV__) {
@@ -47,7 +68,6 @@ if (__DEV__) {
 function App(): React.JSX.Element {
   useEffect(() => {
     logger.info('✅ App mounted successfully');
-    Bugsnag.notify(new Error('Test error'))
     // Initialize Firebase Analytics
     analyticsService.initialize().catch(error => {
       logger.error('Failed to initialize Firebase Analytics:', error);
@@ -80,4 +100,4 @@ function App(): React.JSX.Element {
   );
 }
 
-export default App;
+export default Sentry.wrap(App);

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import RNFS from 'react-native-fs';
+import { DOWNLOAD_FOLDER_NAME } from '../config/env';
 
 interface SettingsContextType {
   downloadLocation: string;
@@ -11,7 +12,7 @@ interface SettingsContextType {
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 const STORAGE_KEY = '@ytdownloader_settings';
-const DEFAULT_DOWNLOAD_PATH = `${RNFS.DownloadDirectoryPath}/YTDownloader`;
+const DEFAULT_DOWNLOAD_PATH = `${RNFS.DownloadDirectoryPath}/${DOWNLOAD_FOLDER_NAME}`;
 
 interface SettingsProviderProps {
   children: ReactNode;

@@ -8,7 +8,7 @@ import {
   createCrashSafeWrapper,
 } from '../utils/downloadDebug';
 import { storageService, DownloadedVideo } from './storageService';
-import { API_BASE_URL, SSE_BASE_URL } from '../config/env';
+import { API_BASE_URL, SSE_BASE_URL, DOWNLOAD_FOLDER_NAME } from '../config/env';
 import { DownloadEvent, DownloadOptions } from './download/types';
 import {
   saveFromUrl as saveFromUrlHelper,
@@ -130,7 +130,7 @@ class DownloadService {
     let sink = this.sinkById.get(downloadId);
     if (!sink) {
       const { createSink } = await import('./download/storage-sink');
-      const baseDir = this.customDownloadPath || `${(await import('react-native-fs')).default.DownloadDirectoryPath}/YTDownloader`;
+      const baseDir = this.customDownloadPath || `${(await import('react-native-fs')).default.DownloadDirectoryPath}/${DOWNLOAD_FOLDER_NAME}`;
       sink = await createSink(baseDir, filename, mimeType);
       this.sinkById.set(downloadId, sink);
     }
@@ -189,8 +189,8 @@ class DownloadService {
     try {
       const defaultPath =
         Platform.OS === 'android'
-          ? `${RNFS.DownloadDirectoryPath}/YTDownloader`
-          : `${RNFS.DocumentDirectoryPath}/YTDownloader`;
+          ? `${RNFS.DownloadDirectoryPath}/${DOWNLOAD_FOLDER_NAME}`
+          : `${RNFS.DocumentDirectoryPath}/${DOWNLOAD_FOLDER_NAME}`;
 
       // Only create directory for filesystem paths, not SAF URIs
       if (!defaultPath.startsWith('content://')) {
@@ -361,11 +361,11 @@ class DownloadService {
       // For filesystem paths, we can download directly
       // Use Downloads/temp for SAF paths so Download Manager can access it
       const baseDir = isSafPath
-        ? `${RNFS.DownloadDirectoryPath}/YTDownloader_Temp`
+        ? `${RNFS.DownloadDirectoryPath}/${DOWNLOAD_FOLDER_NAME}_Temp`
         : (this.customDownloadPath || 
             (Platform.OS === 'android'
-              ? `${RNFS.DownloadDirectoryPath}/YTDownloader`
-              : `${RNFS.DocumentDirectoryPath}/YTDownloader`));
+              ? `${RNFS.DownloadDirectoryPath}/${DOWNLOAD_FOLDER_NAME}`
+              : `${RNFS.DocumentDirectoryPath}/${DOWNLOAD_FOLDER_NAME}`));
 
       const sanitizedTitle = this.sanitizeFileName(
         options.videoTitle || options.videoId,

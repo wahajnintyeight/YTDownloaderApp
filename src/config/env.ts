@@ -10,6 +10,7 @@ interface EnvConfig {
   SSE_BASE_URL: string;
   ENVIRONMENT: 'development' | 'staging' | 'production';
   ADS_ENABLED: boolean;
+  DOWNLOAD_FOLDER_NAME: string;
 }
 
 // Development configuration (local/testing)
@@ -18,6 +19,7 @@ const development: EnvConfig = {
   SSE_BASE_URL: 'http://192.168.100.10:8885',
   ENVIRONMENT: 'development',
   ADS_ENABLED: false,
+  DOWNLOAD_FOLDER_NAME: 'ConvertYT-GO',
 };
 
 // Production configuration
@@ -26,6 +28,7 @@ const production: EnvConfig = {
   SSE_BASE_URL: 'https://sse.theprojectphoenix.top',
   ENVIRONMENT: 'production',
   ADS_ENABLED: false,
+  DOWNLOAD_FOLDER_NAME: 'ConvertYT-GO',
 };
 
 // Staging configuration (optional)
@@ -34,6 +37,7 @@ const staging: EnvConfig = {
   SSE_BASE_URL: 'https://staging-sse.theprojectphoenix.top',
   ENVIRONMENT: 'staging',
   ADS_ENABLED: true,
+  DOWNLOAD_FOLDER_NAME: 'ConvertYT-GO',
 };
 
 /**
@@ -62,6 +66,7 @@ export const API_BASE_URL = ENV.API_BASE_URL;
 export const SSE_BASE_URL = ENV.SSE_BASE_URL;
 export const ENVIRONMENT = ENV.ENVIRONMENT;
 export const ADS_ENABLED = ENV.ADS_ENABLED;
+export const DOWNLOAD_FOLDER_NAME = ENV.DOWNLOAD_FOLDER_NAME;
 
 // Log current environment on app start (only in development)
 if (__DEV__) {
