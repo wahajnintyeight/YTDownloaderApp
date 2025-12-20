@@ -283,21 +283,11 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
   // Load persisted downloads on mount
   useEffect(() => {
     const loadPersistedDownloads = async () => {
-      console.log(
-        '🔍 [INIT] Starting to load persisted downloads from storage...',
-      );
       try {
         const persistedVideos = await storageService.getDownloadedVideos();
-        console.log(
-          `📂 [STORAGE] Loaded ${persistedVideos.length} persisted downloads from storage`,
-        );
-
+     
         if (persistedVideos.length > 0) {
-          console.log(
-            '📋 [STORAGE] Persisted download IDs:',
-            persistedVideos.map(pv => `${pv.id} (${pv.title})`).join(', '),
-          );
-
+     
           // Convert persisted videos to Download format
           const downloads: Download[] = persistedVideos.map(pv => ({
             id: pv.id,
@@ -317,19 +307,12 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
             createdAt: new Date(pv.downloadedAt),
           }));
 
-          console.log(
-            `✅ [STORAGE] Converted ${downloads.length} persisted videos to Download format`,
-          );
-
           // Sync to state
           (dispatch as any)({
             type: 'SYNC_QUEUE_STATE',
             payload: { downloads },
           });
 
-          console.log(
-            '💾 [STORAGE] Initial state synced with persisted downloads',
-          );
         } else {
           console.log('📭 [STORAGE] No persisted downloads found in storage');
         }
@@ -340,7 +323,6 @@ export const DownloadProvider: React.FC<DownloadProviderProps> = ({
         );
       } finally {
         setIsInitialized(true);
-        console.log('✅ [INIT] Download provider initialized');
       }
     };
 

@@ -8,7 +8,7 @@ import {
   exists,
   unlink,
   hasPermission,
-  mkdir,
+  listFiles,
 } from 'react-native-saf-x';
 
 export async function saveFromUrl(
@@ -78,24 +78,21 @@ export async function saveFromUrl(
 
        const docMime = mimeType || 'application/octet-stream';
        
-       // Create a subfolder for organized downloads (optional, but recommended)
-       // react-native-saf-x allows mkdir on tree URIs
-       let targetDir = downloadsPath;
+       // Use the user's selected directory directly - don't create subfolders
+       // Verify the directory is accessible
        try {
-         const subfolderUri = `${downloadsPath}/YTDownloader`;
-         await mkdir(subfolderUri);
-         targetDir = subfolderUri;
-         console.log(`📁 Created/verified YTDownloader subfolder in SAF tree`);
-       } catch (mkdirError) {
-         // Subfolder might already exist, or mkdir might not be needed
-         console.log('Subfolder creation result:', mkdirError);
-         // Continue with root tree directory
+         // Try to list files to verify access
+         await listFiles(downloadsPath);
+         console.log(`✅ Verified SAF directory access: ${downloadsPath}`);
+       } catch {
+         // Lint fix: remove unused error variable
+         throw new Error('Cannot access selected folder. Please re-select the folder in Settings.');
        }
 
-       // Let react-native-saf-x create the file in the tree directory
+       // Let react-native-saf-x create the file in the user's selected directory
        // Pass the directory URI + filename, and let the library handle the document URI conversion
-       const filePathInTree = `${targetDir}/${encodeURIComponent(filename)}`;
-       console.log(`📝 Creating SAF file in tree: ${targetDir} name: ${filename}`);
+       const filePathInTree = `${downloadsPath}/${encodeURIComponent(filename)}`;
+       console.log(`📝 Creating SAF file in user's directory: ${downloadsPath} name: ${filename}`);
 
        // Check if file exists and delete it first
        try {
@@ -143,9 +140,9 @@ export async function saveFromUrl(
 
     } else {
       // Normal File System (Non-SAF)
-      // Ensure dir
+      // Verify directory exists - don't create it, user chose it
       if (!(await RNFS.exists(downloadsPath))) {
-        await RNFS.mkdir(downloadsPath);
+        throw new Error(`Download directory does not exist: ${downloadsPath}. Please select a valid folder in Settings.`);
       }
       
       const finalPath = `${downloadsPath}/${filename}`;
@@ -373,6 +370,7 @@ export async function exportToUserLocation(
   filename: string,
   userPath: string,
 ): Promise<string> {
+  console.log(`📤 [EXPORT] Starting export: ${filename} to ${userPath}`);
   try {
     // Prefer react-native-blob-util for reading base64 when available
     let blobFs: any | null = null;
@@ -397,43 +395,21 @@ export async function exportToUserLocation(
         ? 'video/webm'
         : 'application/octet-stream';
 
-      // Check file size to prevent OOM during SAF export
-      const stat = blobFs ? await blobFs.stat(sourcePath) : await RNFS.stat(sourcePath);
-      const sizeBytes = Number((stat as any)?.size || 0);
-      const sizeMB = sizeBytes / 1024 / 1024;
-      
-      // For very large files, SAF export will cause OOM - fallback to filesystem Downloads
-      if (sizeMB > 30) {
-        console.warn(
-          `⚠️ Skipping SAF export for large file (${sizeMB.toFixed(2)} MB). Falling back to Downloads folder.`,
-        );
-        const fallbackDir = `${RNFS.DownloadDirectoryPath}/YTDownloader`;
-        try {
-          await RNFS.mkdir(fallbackDir);
-        } catch {}
-        const destPath = `${fallbackDir}/${filename}`;
-        await RNFS.copyFile(sourcePath, destPath);
-        console.log(`✅ Exported large file to: ${destPath}`);
-        return destPath;
-      }
-
-      // Create a subfolder for organized downloads (optional, but recommended)
-      let targetDir = userPath;
+      // Use the user's selected directory directly - don't create subfolders
+      // Verify the directory is accessible
       try {
-        const subfolderUri = `${userPath}/YTDownloader`;
-        await mkdir(subfolderUri);
-        targetDir = subfolderUri;
-        console.log(`📁 Created/verified YTDownloader subfolder in SAF tree`);
-      } catch (mkdirError) {
-        // Subfolder might already exist, or mkdir might not be needed
-        console.log('Subfolder creation result:', mkdirError);
-        // Continue with root tree directory
+        // Try to list files to verify access
+        await listFiles(userPath);
+        console.log(`✅ Verified SAF directory access: ${userPath}`);
+      } catch (e) {
+        console.error('Failed to verify SAF directory access:', e);
+        throw new Error('Cannot access selected folder. Please re-select the folder in Settings.');
       }
 
-      // Let react-native-saf-x create the file in the tree directory
+      // Let react-native-saf-x create the file in the user's selected directory
       // Pass the directory URI + filename, and let the library handle the document URI conversion
-      const filePathInTree = `${targetDir}/${encodeURIComponent(filename)}`;
-      console.log(`📝 Creating SAF file in tree: ${targetDir} name: ${filename}`);
+      const filePathInTree = `${userPath}/${encodeURIComponent(filename)}`;
+      console.log(`📝 Creating SAF file in user's directory: ${userPath} name: ${filename}`);
 
       // Check if file exists and delete it first
       try {
@@ -456,33 +432,50 @@ export async function exportToUserLocation(
 
       console.log(`📤 Writing file to SAF location: ${targetUri}`);
 
-      // Read source file and write to SAF location
-      const base64 = blobFs
-        ? await blobFs.readFile(sourcePath, 'base64')
-        : await RNFS.readFile(sourcePath, 'base64');
+      // Use chunked writing for large files to prevent OOM
+      // Source path is always a filesystem path at this point, so use RNFS
+      const stat = await RNFS.stat(sourcePath);
+      const fileSize = Number(stat.size);
+      const sizeMB = fileSize / 1024 / 1024;
       
-      await safWriteFile(targetUri, base64, { encoding: 'base64' });
+      console.log(`📊 File size: ${sizeMB.toFixed(2)} MB - using chunked write`);
+      
+      // For large files, use chunked writing to prevent OOM
+      if (fileSize > 10 * 1024 * 1024) { // 10 MB threshold for chunked writing
+        const chunkSize = 1024 * 1024; // 1 MB chunks
+        let offset = 0;
+        
+        while (offset < fileSize) {
+          const len = Math.min(chunkSize, fileSize - offset);
+          const chunk = await RNFS.read(sourcePath, len, offset, 'base64');
+          
+          await safWriteFile(targetUri, chunk, { encoding: 'base64', append: offset > 0 });
+          offset += len;
+          
+          const progress = Math.floor((offset / fileSize) * 100);
+          console.log(`📊 Export progress: ${progress}% (${(offset / 1024 / 1024).toFixed(2)} MB / ${sizeMB.toFixed(2)} MB)`);
+        }
+      } else {
+        // For smaller files, read all at once
+        const base64 = await RNFS.readFile(sourcePath, 'base64');
+        await safWriteFile(targetUri, base64, { encoding: 'base64' });
+      }
+      
       console.log(`✅ Exported to SAF: ${targetUri}`);
       return targetUri;
     }
 
-    if (blobFs) {
-      const userDirExists = await blobFs.exists(userPath);
-      if (!userDirExists) {
-        await blobFs.mkdir(userPath);
-      }
-      const destPath = `${userPath}/${filename}`;
-      // Prefer direct filesystem copy to avoid base64 for large files
-      await RNFS.copyFile(sourcePath, destPath);
-      console.log(`✅ Exported to: ${destPath}`);
-      return destPath;
-    } else {
-      await RNFS.mkdir(userPath);
-      const destPath = `${userPath}/${filename}`;
-      await RNFS.copyFile(sourcePath, destPath);
-      console.log(`✅ Exported to: ${destPath}`);
-      return destPath;
+    // Non-SAF filesystem path - verify directory exists (don't create it, user chose it)
+    const userDirExists = await RNFS.exists(userPath);
+    if (!userDirExists) {
+      throw new Error(`Download directory does not exist: ${userPath}. Please select a valid folder in Settings.`);
     }
+    
+    const destPath = `${userPath}/${filename}`;
+    // Prefer direct filesystem copy to avoid base64 for large files
+    await RNFS.copyFile(sourcePath, destPath);
+    console.log(`✅ Exported to: ${destPath}`);
+    return destPath;
   } catch (error: any) {
     const errorMessage = error?.message || 'Unknown error';
     console.error('❌ Export to user location failed:', errorMessage, error);

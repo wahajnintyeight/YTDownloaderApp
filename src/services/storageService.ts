@@ -55,18 +55,8 @@ class StorageService {
 
   async getDownloadedVideos(): Promise<DownloadedVideo[]> {
     try {
-      console.log(
-        `🔍 [STORAGE SERVICE] Reading from key: ${DOWNLOADED_VIDEOS_KEY}`,
-      );
       const videosJson = await AsyncStorage.getItem(DOWNLOADED_VIDEOS_KEY);
-      console.log(
-        `📦 [STORAGE SERVICE] Raw data from AsyncStorage:`,
-        videosJson ? `${videosJson.substring(0, 100)}...` : 'null',
-      );
       const videos = videosJson ? JSON.parse(videosJson) : [];
-      console.log(
-        `✅ [STORAGE SERVICE] Parsed ${videos.length} videos from storage`,
-      );
       return videos;
     } catch (error) {
       console.error(

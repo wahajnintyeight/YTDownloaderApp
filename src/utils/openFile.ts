@@ -314,11 +314,40 @@ export const openDirectory = async (directoryPath: string): Promise<DirectoryOpe
             logger.warn('Failed to list SAF directory files:', listError);
           }
           
-          // Note: On Android 7+ (targetSdk 24+), we cannot use file:// URIs in intents
-          // There is no reliable way to programmatically open a SAF-selected folder
-          // in the user's file manager. We'll show an informative dialog instead.
+          // Try to open the SAF directory using document URI format
+          // Tree URI: content://com.android.externalstorage.documents/tree/primary:Music/test
+          // Document URI: content://com.android.externalstorage.documents/document/primary:Music%2Ftest
+          try {
+            const treeMatch = directoryPath.match(/\/tree\/(.+)$/);
+            if (treeMatch) {
+              const treePath = treeMatch[1];
+              // Convert tree path to document path (replace / with %2F after the first :)
+              const colonIndex = treePath.indexOf(':');
+              let documentPath = treePath;
+              if (colonIndex !== -1) {
+                const prefix = treePath.substring(0, colonIndex + 1);
+                const rest = treePath.substring(colonIndex + 1);
+                // Encode slashes in the path portion
+                documentPath = prefix + encodeURIComponent(rest).replace(/%2F/gi, '%2F');
+              }
+              
+              // Build document URI
+              const documentUri = directoryPath.replace(/\/tree\/.*$/, `/document/${documentPath}`);
+              logger.info(`Attempting to open document URI: ${documentUri}`);
+              
+              try {
+                await Linking.openURL(documentUri);
+                logger.info(`Successfully opened SAF directory via document URI`);
+                return; // Success!
+              } catch (docError) {
+                logger.warn('Failed to open document URI:', docError);
+              }
+            }
+          } catch (docUriError) {
+            logger.warn('Failed to build/open document URI:', docUriError);
+          }
           
-          // If we can't open automatically, show informative dialog
+          // If document URI approach failed, show informative dialog
           const infoMessage = 
             `📂 Download Folder Location\n\n` +
             `Folder: ${folderName}\n` +

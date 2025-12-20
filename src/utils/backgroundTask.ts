@@ -19,11 +19,9 @@ class BackgroundTaskManager {
     try {
       // On Android, we can request to ignore battery optimizations
       // This requires the REQUEST_IGNORE_BATTERY_OPTIMIZATIONS permission
-      console.log('📱 Requesting battery optimization exemption...');
       
       // Note: This would require a native module to implement properly
       // For now, we'll just log and return true
-      console.log('✅ Battery optimization handling enabled');
       this.isBackgroundEnabled = true;
       return true;
     } catch (error) {
@@ -78,7 +76,7 @@ class BackgroundTaskManager {
       }
     });
 
-    console.log('✅ Background task support initialized');
+    console.log('Background task support initialized');
   }
 }
 

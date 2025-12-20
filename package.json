@@ -15,8 +15,11 @@
     "build:apk-only": "cd android && gradlew assembleRelease"
   },
   "dependencies": {
+    "@bugsnag/react-native": "^8.7.0",
+    "@bugsnag/react-native-performance": "^3.3.0",
     "@notifee/react-native": "^9.1.8",
     "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-community/netinfo": "^11.4.1",
     "@react-native-documents/picker": "^11.0.0",
     "@react-native-firebase/analytics": "^21.0.0",
     "@react-native-firebase/app": "^21.0.0",

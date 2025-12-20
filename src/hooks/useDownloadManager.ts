@@ -43,7 +43,6 @@ export const useDownloadManager = (): UseDownloadManagerReturn => {
     try {
       const videos = await storageService.getDownloadedVideos();
       setDownloadedVideos(videos);
-      console.log(`✅ Loaded ${videos.length} downloaded videos from storage`);
     } catch (error) {
       console.error('❌ Failed to load downloaded videos', error);
     } finally {

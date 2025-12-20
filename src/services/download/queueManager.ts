@@ -64,7 +64,7 @@ export class ClientDownloadQueue {
     next.startedAt = Date.now();
     next.progress = 0;
     this.notifyListeners();
-    
+
     // // Show notification immediately when download starts (not just on progress)
     // notificationService.showDownloadProgress(
     //   next.id,
@@ -99,6 +99,7 @@ export class ClientDownloadQueue {
         console.log(
           `✅ [QUEUE] Successfully saved download to storage: ${next.filename}`,
         );
+
       } else {
         console.warn(
           `⚠️ [QUEUE] Cannot save download to storage - missing filePath or filename`,
@@ -124,16 +125,18 @@ export class ClientDownloadQueue {
   }
 
   private executeDownload(job: DownloadJob): Promise<void> {
-    console.log("🔧 EXECUTING DOWNLOAD JOB:", job)
+    console.log('🔧 EXECUTING DOWNLOAD JOB:', job);
     return new Promise((resolve, reject) => {
       const cb = this.callbacks.get(job.id);
-      
+
       // 🔧 Force specific method if requested
       if (job.forceMethod) {
-        console.log(`🔧 Forcing download method: ${job.forceMethod.toUpperCase()}`);
+        console.log(
+          `🔧 Forcing download method: ${job.forceMethod.toUpperCase()}`,
+        );
         downloadService.forceNextDownloadMethod(job.forceMethod);
       }
-      
+
       // 🔧 Use Smart Download (chooses method based on config)
       downloadService
         .downloadVideoSmart(
@@ -164,7 +167,11 @@ export class ClientDownloadQueue {
             resolve();
           },
           (error: string) => {
-            notificationService.showDownloadError(job.id, job.videoTitle, error);
+            notificationService.showDownloadError(
+              job.id,
+              job.videoTitle,
+              error,
+            );
             cb?.onError?.(error);
             reject(new Error(error));
           },

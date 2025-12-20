@@ -15,6 +15,7 @@ import { AppNavigator } from './src/navigation/AppNavigator';
 import { logger } from './src/utils/logger';
 import { downloadService, analyticsService } from './src/services';
 import { backgroundTaskManager } from './src/utils/backgroundTask';
+import Bugsnag from "@bugsnag/react-native";
 
 // Enable console logs in development
 if (__DEV__) {
@@ -40,14 +41,13 @@ if (__DEV__) {
     originalInfo('[INFO]', ...args);
   };
 
-  logger.info('🚀 App starting in development mode');
   logger.info('📱 Console logging enabled');
 }
 
 function App(): React.JSX.Element {
   useEffect(() => {
     logger.info('✅ App mounted successfully');
-    
+    Bugsnag.notify(new Error('Test error'))
     // Initialize Firebase Analytics
     analyticsService.initialize().catch(error => {
       logger.error('Failed to initialize Firebase Analytics:', error);

@@ -346,17 +346,22 @@ class DownloadService {
 
       console.log('🌐 Stream URL:', streamUrl);
 
+      // Reload download path to ensure we have the latest setting
+      // (loadDownloadPath is async and may not have completed in constructor)
+      await this.loadDownloadPath();
+      console.log('📂 Current download path:', this.customDownloadPath);
+
       // Determine download directory and filename
       // NOTE: react-native-blob-util cannot write directly to SAF content:// URIs,
       // so we always download to a temp location first, then export to SAF.
       const isSafPath = this.customDownloadPath?.startsWith('content://');
       const targetSafPath = isSafPath ? this.customDownloadPath : null;
       
-      // For SAF paths, we download to a temp location first
+      // For SAF paths, we download to a PUBLIC temp location first (Download Manager needs public paths)
       // For filesystem paths, we can download directly
-      const tempDir = `${RNFS.CachesDirectoryPath}/YTDownloader_Downloads`;
+      // Use Downloads/temp for SAF paths so Download Manager can access it
       const baseDir = isSafPath
-        ? tempDir
+        ? `${RNFS.DownloadDirectoryPath}/YTDownloader_Temp`
         : (this.customDownloadPath || 
             (Platform.OS === 'android'
               ? `${RNFS.DownloadDirectoryPath}/YTDownloader`
@@ -370,16 +375,27 @@ class DownloadService {
 
       console.log('📂 Download base dir:', baseDir);
       console.log('📂 Download path:', filePath);
+      console.log('📂 Is SAF path?', isSafPath);
       if (targetSafPath) {
         console.log('📂 Target SAF path:', targetSafPath);
+      } else {
+        console.log('⚠️ No SAF path detected - will save to filesystem location');
       }
       console.log('📥 Starting native download manager...');
 
-      // Ensure download directory exists (only for real filesystem paths)
-      try {
-        await RNFS.mkdir(baseDir);
-      } catch {
-        // Directory might already exist
+      // For filesystem paths, verify directory exists (don't create it - user chose it)
+      if (!isSafPath) {
+        const dirExists = await RNFS.exists(baseDir);
+        if (!dirExists) {
+          throw new Error(`Download directory does not exist: ${baseDir}. Please select a valid folder in Settings.`);
+        }
+      } else {
+        // For temp directory (SAF downloads), create it if needed (we'll clean it up later)
+        try {
+          await RNFS.mkdir(baseDir);
+        } catch {
+          // Directory might already exist
+        }
       }
 
       // Use react-native-blob-util for native download
@@ -432,6 +448,7 @@ class DownloadService {
       // If we need to export to SAF location, do it now
       if (targetSafPath) {
         console.log('📤 Exporting to SAF location:', targetSafPath);
+        const tempDir = baseDir; // Store for cleanup
         try {
           const { exportToUserLocation } = await import('./download/storage');
           const exportedPath = await exportToUserLocation(savedPath, filename, targetSafPath);
@@ -445,22 +462,27 @@ class DownloadService {
             console.warn('Failed to cleanup temp file:', cleanupErr);
           }
           
+          // Clean up temp directory if it's empty (we created it, so we clean it up)
+          try {
+            const files = await RNFS.readdir(tempDir);
+            if (files.length === 0) {
+              // Use unlink for directories (RNFS uses unlink for both files and empty dirs)
+              await RNFS.unlink(tempDir);
+              console.log('🗑️ Cleaned up empty temp directory');
+            } else {
+              console.log(`📁 Temp directory not empty (${files.length} files), leaving it`);
+            }
+          } catch (dirCleanupErr) {
+            // Directory might not be empty or might not exist - that's fine
+            console.log('Temp directory cleanup result:', dirCleanupErr);
+          }
+          
           savedPath = exportedPath;
         } catch (exportError: any) {
           console.error('❌ SAF export failed:', exportError);
-          // Keep the temp file as fallback
-          console.warn('⚠️ Keeping download in temp location:', savedPath);
-          // Copy to default downloads as fallback
-          try {
-            const fallbackDir = `${RNFS.DownloadDirectoryPath}/YTDownloader`;
-            await RNFS.mkdir(fallbackDir);
-            const fallbackPath = `${fallbackDir}/${filename}`;
-            await RNFS.copyFile(savedPath, fallbackPath);
-            console.log('✅ Fallback copy to:', fallbackPath);
-            savedPath = fallbackPath;
-          } catch (fallbackErr) {
-            console.error('Fallback copy also failed:', fallbackErr);
-          }
+          // Don't create fallback directories - user chose their location
+          // Keep the temp file so user can manually move it if needed
+          throw new Error(`Failed to save to selected folder: ${exportError.message}. The file is temporarily saved at: ${savedPath}`);
         }
       }
 

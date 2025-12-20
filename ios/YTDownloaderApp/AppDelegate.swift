@@ -1,3 +1,4 @@
+import Bugsnag
 import UIKit
 import React
 import React_RCTAppDelegate
@@ -13,7 +14,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
   func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
-  ) -> Bool {
+  ) -> Bool {    Bugsnag.start()
+
+
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()

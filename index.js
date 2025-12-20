@@ -1,3 +1,17 @@
+import Bugsnag from "@bugsnag/react-native";
+import BugsnagPerformance from "@bugsnag/react-native-performance";
+BugsnagPerformance.start({
+  apiKey: 'b6e420a2f8a726d1e44f2adb99fde9fe',
+  enabledBreadcrumbTypes: [
+    "state",
+    "request",
+    "process",
+    "log",
+    "navigation",
+    "user",
+  ]
+})
+
 import 'react-native-reanimated';
 /**
  * @format
@@ -16,12 +30,12 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
     if (actionId.startsWith('cancel:')) {
       try {
         await notifee.cancelNotification(notificationId);
-      } catch {}
+      } catch { }
       try {
         if (notificationId) {
           clientDownloadQueue.cancelDownload(notificationId);
         }
-      } catch {}
+      } catch { }
     }
   }
 });
